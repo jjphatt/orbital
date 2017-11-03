@@ -1,0 +1,14 @@
+build/*
+
+*.aux
+*.toc
+*.pdf
+*.log
+*.out
+*.bbl
+*.blg
+
+*.swp
+*.swo
+*~
+

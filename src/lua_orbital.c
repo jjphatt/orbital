@@ -1,0 +1,157 @@
+// Copyright (c) 2016, Jeffrey N. Johnson
+// All rights reserved.
+
+#include "lua_orbital.h"
+
+#include "lualib.h"
+#include "lauxlib.h"
+
+static int b_new(lua_State* L)
+{
+  if ((lua_gettop(L) != 1) || !lua_istable(L, 1))
+    luaL_error(L, "Argument must be a table containing name, x, v.");
+
+  lua_getfield(L, 1, "name");
+  if (!lua_isstring(L, -1))
+    luaL_error(L, "name must be a string.");
+  const char* name = lua_tostring(L, -1);
+
+  lua_getfield(L, 1, "m");
+  if (!lua_is_real(L, -1))
+    luaL_error(L, "m must be a positive number.");
+  real_t m = lua_to_real(L, -1);
+  if (m <= 0.0)
+    luaL_error(L, "m must be positive.");
+
+  lua_getfield(L, 1, "x");
+  if (!lua_is_point(L, -1))
+    luaL_error(L, "x must be a point.");
+  point_t* x = lua_to_point(L, -1);
+
+  lua_getfield(L, 1, "v");
+  if (!lua_is_vector(L, -1))
+    luaL_error(L, "v must be a vector.");
+  vector_t* v = lua_to_vector(L, -1);
+
+  body_t* b = body_new(name, m, x, v);
+  lua_push_body(L, b);
+  return 1;
+}
+
+static lua_module_function body_functions[] = {
+  {"new", b_new, NULL},
+  {NULL, NULL, NULL}
+};
+
+static int b_name(lua_State* L)
+{
+  body_t* b = lua_to_body(L, 1);
+  lua_pushstring(L, b->name);
+  return 1;
+}
+
+static int b_mass(lua_State* L)
+{
+  body_t* b = lua_to_body(L, 1);
+  lua_push_real(L, b->m);
+  return 1;
+}
+
+static int b_x(lua_State* L)
+{
+  body_t* b = lua_to_body(L, 1);
+  lua_push_point(L, point_new(b->x.x, b->x.y, b->x.z));
+  return 1;
+}
+
+static int b_v(lua_State* L)
+{
+  body_t* b = lua_to_body(L, 1);
+  lua_push_vector(L, vector_new(b->v.x, b->v.y, b->v.z));
+  return 1;
+}
+
+static lua_record_field body_fields[] = {
+  {"name", b_name, NULL},
+  {"mass", b_mass, NULL},
+  {"x", b_x, NULL},
+  {"v", b_v, NULL},
+  {NULL, NULL, NULL}
+};
+
+static int body_tostring(lua_State* L)
+{
+  body_t* b = lua_to_body(L, 1);
+  lua_pushfstring(L, "body (%s)", b->name);
+  return 1;
+}
+
+static lua_record_metamethod body_mm[] = {
+  {"__tostring", body_tostring},
+  {NULL, NULL}
+};
+
+// This function constructs our "n squared" model. It takes a table of 
+// arguments.
+static int n_squared(lua_State* L)
+{
+  if ((lua_gettop(L) != 1) || !lua_istable(L, 1))
+    luaL_error(L, "Argument must be a table of parameters and bodies.");
+
+  // Where all our bodies at?
+  lua_getfield(L, 1, "bodies");
+  if (!lua_istable(L, -1))
+    luaL_error(L, "bodies must be a list of body objects.");
+  lua_pop(L, 1);
+  body_array_t* bodies = body_array_new();
+
+  // Are we given a gravitational constant G?
+  real_t G = 1.0;
+  lua_getfield(L, 1, "G");
+  if (lua_isnumber(L, -1))
+    G = lua_to_real(L, -1);
+
+  // Are we given a post-newtonian correction constant?
+  // FIXME
+
+  // Create the thingy and push it to the stack.
+  model_t* n2 = n_squared_new(G, bodies);
+  lua_push_model(L, n2);
+  return 1;
+}
+
+static void lua_register_gravity(lua_State* L)
+{
+  // Create a new table and fill it with our gravity models.
+  lua_newtable(L);
+
+  lua_pushcfunction(L, n_squared);
+  lua_setfield(L, -2, "n_squared");
+
+  lua_setglobal(L, "gravity");
+}
+
+int lua_register_orbital_modules(lua_State* L)
+{
+  lua_register_core_modules(L);
+  lua_register_model_modules(L);
+  lua_register_gravity(L);
+  lua_register_record_type(L, "body", "A body in 3D space.", body_functions, body_fields, body_mm);
+  return 0;
+}
+
+void lua_push_body(lua_State* L, body_t* body)
+{
+  lua_push_record(L, "body", body, NULL);
+}
+
+bool lua_is_body(lua_State* L, int index)
+{
+  return lua_is_record(L, index, "body");
+}
+
+body_t* lua_to_body(lua_State* L, int index)
+{
+  return (body_t*)lua_to_record(L, index, "body");
+}
+
