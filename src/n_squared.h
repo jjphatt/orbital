@@ -10,5 +10,10 @@
 model_t* n_squared_new(real_t G,
                        body_array_t* bodies);
 
+// Creates a probe that tracks the position of the body with the given name.
+probe_t* n_squared_x_probe_new(const char* body_name);
+
+// Creates a probe that tracks the velocity of the body with the given name.
+probe_t* n_squared_v_probe_new(const char* body_name);
 #endif
 
