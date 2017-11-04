@@ -7,6 +7,7 @@
 #include "polymec.h"
 
 // A body floats through 3D space under the influence of gravity.
+// Objects of this type are garbage-collected.
 typedef struct 
 {
   char* name;
@@ -14,6 +15,11 @@ typedef struct
   real_t m;   // mass
   point_t x;  // position
   vector_t v; // velocity
+
+  // This flag is true iff this body should be regarded as massive enough 
+  // to impose relativistic effects on other bodies. Only one such body is 
+  // allowed into a classical calculation.
+  bool schwartzchild; 
 } body_t;
 
 // Creates a new body with a descriptive name, a mass m, a position x, 
@@ -22,9 +28,6 @@ body_t* body_new(const char* name,
                  real_t m,
                  point_t* x, 
                  vector_t* v);
-
-// Frees the body.
-void body_free(body_t* b);
 
 DEFINE_ARRAY(body_array, body_t*)
 

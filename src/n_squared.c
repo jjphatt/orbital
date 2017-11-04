@@ -145,6 +145,22 @@ model_t* n_squared_new(real_t G,
                                             nsq, nsq_accel, nsq_stable_dt, 
                                             NULL);
 
+  // Find out whether we have a Schwartzchild body.
+  int sc_index = -1;
+  for (size_t b = 0; b < bodies->size; ++b)
+  {
+    body_t* body = bodies->data[b];
+    if (body->schwartzchild)
+    {
+      ASSERT(sc_index == -1); // Only one of these allowed!
+      sc_index = (int)b;
+    }
+  }
+
+  // Swap any Schwartzchild body with the first one, to impose an ordering.
+  if (sc_index != -1)
+    body_array_swap(bodies, 0, sc_index);
+
   // Now create the model.
   model_vtable vtable = {.init = nsq_init,
                          .max_dt = nsq_max_dt,

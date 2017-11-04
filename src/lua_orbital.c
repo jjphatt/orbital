@@ -1,6 +1,7 @@
 // Copyright (c) 2016, Jeffrey N. Johnson
 // All rights reserved.
 
+#include "constants.h"
 #include "lua_orbital.h"
 
 #include "lualib.h"
@@ -38,8 +39,17 @@ static int b_new(lua_State* L)
   return 1;
 }
 
+static int b_sc(lua_State* L)
+{
+  b_new(L);
+  body_t* b = lua_to_body(L, -1);
+  b->schwartzchild = true;
+  return 1;
+}
+
 static lua_module_function body_functions[] = {
-  {"new", b_new, NULL},
+  {"new", b_new, "Creates a new massive body with name, m, x, v."},
+  {"schwartzchild", b_sc, "Creates a new Schwartzchild body with name, m, x, v."},
   {NULL, NULL, NULL}
 };
 
@@ -102,17 +112,36 @@ static int n_squared(lua_State* L)
   lua_getfield(L, 1, "bodies");
   if (!lua_istable(L, -1))
     luaL_error(L, "bodies must be a list of body objects.");
-  lua_pop(L, 1);
   body_array_t* bodies = body_array_new();
+  {
+    int i = 1;
+    bool have_swartzchild_body = false;
+    while (true)
+    {
+      lua_rawgeti(L, -1, i);
+      if (lua_isnil(L, -1)) break;
+      if (!lua_is_body(L, -1))
+        luaL_error(L, "Item %d in bodies is not a body.", i);
+      body_t* b = lua_to_body(L, -1);
+      if (b->schwartzchild)
+      {
+        if (have_swartzchild_body)
+          luaL_error(L, "Only one body in bodies may be a schwartzchild body.");
+        else
+          have_swartzchild_body = true;
+      }
+      body_array_append(bodies, b);
+      lua_pop(L, 1);
+      ++i;
+    }
+  }
+  lua_pop(L, 1);
 
   // Are we given a gravitational constant G?
-  real_t G = 1.0;
+  real_t G = GRAVITATIONAL_CONSTANT;
   lua_getfield(L, 1, "G");
   if (lua_isnumber(L, -1))
     G = lua_to_real(L, -1);
-
-  // Are we given a post-newtonian correction constant?
-  // FIXME
 
   // Create the thingy and push it to the stack.
   model_t* n2 = n_squared_new(G, bodies);
@@ -131,12 +160,35 @@ static void lua_register_gravity(lua_State* L)
   lua_setglobal(L, "gravity");
 }
 
+static void lua_register_constants(lua_State* L)
+{
+  // Create a new table and fill it with our named physical constants.
+  lua_newtable(L);
+
+  lua_pushnumber(L, GRAVITATIONAL_CONSTANT);
+  lua_setfield(L, -2, "G");
+  lua_pushnumber(L, SOLAR_MASS);
+  lua_setfield(L, -2, "solar_mass");
+  lua_pushnumber(L, EARTH_MASS);
+  lua_setfield(L, -2, "earth_mass");
+  lua_pushnumber(L, SPEED_OF_LIGHT);
+  lua_setfield(L, -2, "c");
+  lua_pushnumber(L, ASTRONOMICAL_UNIT);
+  lua_setfield(L, -2, "AU");
+
+  lua_setglobal(L, "constants");
+}
+
+
 int lua_register_orbital_modules(lua_State* L)
 {
   lua_register_core_modules(L);
   lua_register_model_modules(L);
-  lua_register_gravity(L);
+
   lua_register_record_type(L, "body", "A body in 3D space.", body_functions, body_fields, body_mm);
+
+  lua_register_gravity(L);
+  lua_register_constants(L);
   return 0;
 }
 
