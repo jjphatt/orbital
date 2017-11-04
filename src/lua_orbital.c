@@ -103,7 +103,7 @@ static lua_record_metamethod body_mm[] = {
 
 // This function constructs our "n squared" model. It takes a table of 
 // arguments.
-static int n_squared(lua_State* L)
+static int n2_new(lua_State* L)
 {
   if ((lua_gettop(L) != 1) || !lua_istable(L, 1))
     luaL_error(L, "Argument must be a table of parameters and bodies.");
@@ -149,15 +149,39 @@ static int n_squared(lua_State* L)
   return 1;
 }
 
-static void lua_register_gravity(lua_State* L)
+static int n2_x_probe(lua_State* L)
+{
+  if (!lua_isstring(L, 1))
+    luaL_error(L, "Argument must be the name of a body.");
+  const char* name = lua_tostring(L, 1);
+  lua_push_probe(L, n_squared_x_probe_new(name));
+  return 1;
+}
+
+static int n2_v_probe(lua_State* L)
+{
+  if (!lua_isstring(L, 1))
+    luaL_error(L, "Argument must be the name of a body.");
+  const char* name = lua_tostring(L, 1);
+  lua_push_probe(L, n_squared_v_probe_new(name));
+  return 1;
+}
+
+static void lua_register_n_squared(lua_State* L)
 {
   // Create a new table and fill it with our gravity models.
   lua_newtable(L);
 
-  lua_pushcfunction(L, n_squared);
-  lua_setfield(L, -2, "n_squared");
+  lua_pushcfunction(L, n2_new);
+  lua_setfield(L, -2, "new");
 
-  lua_setglobal(L, "gravity");
+  lua_pushcfunction(L, n2_x_probe);
+  lua_setfield(L, -2, "x_probe");
+
+  lua_pushcfunction(L, n2_v_probe);
+  lua_setfield(L, -2, "v_probe");
+
+  lua_setglobal(L, "n_squared");
 }
 
 static void lua_register_constants(lua_State* L)
@@ -187,7 +211,7 @@ int lua_register_orbital_modules(lua_State* L)
 
   lua_register_record_type(L, "body", "A body in 3D space.", body_functions, body_fields, body_mm);
 
-  lua_register_gravity(L);
+  lua_register_n_squared(L);
   lua_register_constants(L);
   return 0;
 }

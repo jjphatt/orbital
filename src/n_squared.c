@@ -27,6 +27,11 @@ static void nsq_init(void* context, real_t t)
     nsq->U[6*b+5] = body->v.z;
     nsq->v_min = MIN(nsq->v_min, vector_mag(&body->v));
   }
+//printf("U = [ ");
+//for (size_t b = 0; b < nsq->bodies->size; ++b)
+//for (int i = 0; i < 6; ++i)
+//printf("%g ", nsq->U[6*b+i]);
+//printf("]\n");
 
   // Compute the maximum acceleration on any body.
   real_t G = nsq->G;
@@ -57,13 +62,21 @@ static real_t nsq_max_dt(void* context, real_t t, char* reason)
 
   // The timestep is limited by the ratio of the maximum acceleration to 
   // the minimum speed.
+  snprintf(reason, POLYMEC_MODEL_MAXDT_REASON_SIZE,
+           "ratio of max acceleration to minimum speed");
   return 0.2 * (nsq->a_max / nsq->v_min);
 }
 
 static real_t nsq_advance(void* context, real_t max_dt, real_t t)
 {
-//  nsq_t* nsq = context;
-  return max_dt;
+  nsq_t* nsq = context;
+  polymec_suspend_fpe();
+  bool solved = ode_solver_advance(nsq->solver, t, t + max_dt, nsq->U);
+  polymec_restore_fpe();
+  if (!solved)
+    return 0.0;
+  else
+    return max_dt;
 }
 
 static void nsq_finalize(void* context, int step, real_t t)
@@ -87,6 +100,11 @@ static void nsq_dtor(void* context)
 static int nsq_accel(void* context, real_t t, real_t* U, real_t* dUdt)
 {
   nsq_t* nsq = context;
+//printf("U = [ ");
+//for (size_t b = 0; b < nsq->bodies->size; ++b)
+//for (int i = 0; i < 6; ++i)
+//printf("%g ", U[6*b+i]);
+//printf("]\n");
 
   real_t G = nsq->G;
   nsq->a_max = 0.0;
@@ -95,6 +113,7 @@ static int nsq_accel(void* context, real_t t, real_t* U, real_t* dUdt)
   for (size_t i = 0; i < N; ++i)
   {
     point_t x1 = {.x = U[6*i], .y = U[6*i+1], .z = U[6*i+2]};
+    vector_t v1 = {.x = U[6*i+3], .y = U[6*i+4], .z = U[6*i+5]};
     vector_t a = {.x = 0.0, .y = 0.0, .z = 0.0};
     for (size_t j = 0; j < N; ++j)
     {
@@ -105,11 +124,14 @@ static int nsq_accel(void* context, real_t t, real_t* U, real_t* dUdt)
       point_displacement(&x1, &x2, &r12);
       real_t r = vector_mag(&r12);
       real_t r3_inv = 1.0 / (r*r*r);
-      a.x -= G * m2 * r12.x * r3_inv;
-      a.y -= G * m2 * r12.y * r3_inv;
-      a.z -= G * m2 * r12.z * r3_inv;
-      nsq->a_max = MAX(nsq->a_max, vector_mag(&a));
+//  log_debug("x1 = %g %g %g, x2 = %g %g %g\n", x1.x, x1.y, x1.z, x2.x, x2.y, x2.z);
+//  log_debug("r = %g\n", r);
+      a.x += G * m2 * r12.x * r3_inv;
+      a.y += G * m2 * r12.y * r3_inv;
+      a.z += G * m2 * r12.z * r3_inv;
     }
+    nsq->a_max = MAX(nsq->a_max, vector_mag(&a));
+    nsq->v_min = MIN(nsq->v_min, vector_mag(&v1));
 
     // Compute derivatives.
     dUdt[6*i]   = U[6*i+3];
@@ -119,14 +141,15 @@ static int nsq_accel(void* context, real_t t, real_t* U, real_t* dUdt)
     dUdt[6*i+4] = a.y;
     dUdt[6*i+5] = a.z;
   }
+//  log_debug("a_max = %g\n", nsq->a_max);
   return 0;
 }
 
-static real_t nsq_stable_dt(void* context, real_t t, real_t* U)
-{
-  nsq_t* nsq = context;
-  return 0.2 * (nsq->a_max / nsq->v_min);
-}
+//static real_t nsq_stable_dt(void* context, real_t t, real_t* U)
+//{
+//  nsq_t* nsq = context;
+//  return 0.2 * (nsq->a_max / nsq->v_min);
+//}
 
 // API
 model_t* n_squared_new(real_t G,
@@ -142,7 +165,7 @@ model_t* n_squared_new(real_t G,
   // Set up an explicit RK4 solver.
   nsq->solver = explicit_ark_ode_solver_new(4, MPI_COMM_SELF, 
                                             (int)(6 * bodies->size), 0,
-                                            nsq, nsq_accel, nsq_stable_dt, 
+                                            nsq, nsq_accel, NULL, //nsq_stable_dt, 
                                             NULL);
 
   // Find out whether we have a Schwartzchild body.
@@ -227,7 +250,7 @@ probe_t* n_squared_x_probe_new(const char* body_name)
 {
   char probe_name[129], data_name[129];
   snprintf(probe_name, 128, "%s position", body_name);
-  snprintf(data_name, 128, "%s_x", body_name);
+  snprintf(data_name, 128, "x_%s", body_name);
   size_t shape[1] = {3};
   nsq_probe_t* nsq_p = polymec_malloc(sizeof(nsq_probe_t));
   nsq_p->body_name = string_dup(body_name);
@@ -242,7 +265,7 @@ probe_t* n_squared_v_probe_new(const char* body_name)
 {
   char probe_name[129], data_name[129];
   snprintf(probe_name, 128, "%s velocity", body_name);
-  snprintf(data_name, 128, "%s_v", body_name);
+  snprintf(data_name, 128, "v_%s", body_name);
   size_t shape[1] = {3};
   nsq_probe_t* nsq_p = polymec_malloc(sizeof(nsq_probe_t));
   nsq_p->body_name = string_dup(body_name);
