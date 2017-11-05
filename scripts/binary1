@@ -1,47 +1,76 @@
--- This is a simple binary system with two bodies orbiting each other in a 
--- circle.
+-- This is a simple binary system with two bodies orbiting each other 
+-- in a circle.
+
+-- Options
+dt = options.fixed_dt
+N_steps = options.max_steps or 10000
 
 b1 = body.new{name = '1', 
-              m = 1,
-              x = point.new(-0.5, 0, 0),
+              m = 4,
+              x = point.new(-1, 0, 0),
               v = vector.new(0, -1, 0)}
 
 b2 = body.new{name = '2', 
-              m = 1,
-              x = point.new(0.5, 0, 0),
+              m = 4,
+              x = point.new(1, 0, 0),
               v = vector.new(0, 1, 0)}
 
 -- Create our model.
-n2 = n_squared.new{G = 1, bodies = {b1, b2}}
+n2 = n_squared.new{G = 1, bodies = {b1, b2}, fixed_dt = dt}
 
 -- Now wire up some probes and set acquisition times.
-times = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0}
+T = 2*math.pi
+times = {}
+for i = 0,10 do
+  times[i+1] = 0.1*i*T
+end
 n2:add_probe(n_squared.x_probe('1'), times)
 n2:add_probe(n_squared.v_probe('1'), times)
 n2:add_probe(n_squared.x_probe('2'), times)
 n2:add_probe(n_squared.v_probe('2'), times)
 
 -- Run the thing.
-n2:run{t1 = 0, t2 = 1, max_steps = 1000}
+n2:run{t1 = 0, t2 = 2*math.pi, max_steps = N_steps}
 
 -- Extract data and write to a file.
 data = n2:data()
+print(data)
 vars = {'x_1', 'v_1', 'x_2', 'v_2'}
-f = io.open('binary1.data', 'w')
-f:write('# t ')
-for i=1,#vars do
-  f:write(string.format('%s ', vars[i]))
-end
-f:write('\n')
+f = io.open('binary1.py', 'w')
+f:write('from pylab import *\n')
+
+f:write('t = [ ')
 for i=1,#times do
-  f:write(string.format('%f ', times[i]))
-  for j=1,#vars do
-    array = data[vars[j]][times[i]]
-    for k=1,#array do
-      f:write(string.format('%f ', array[k]))
-    end
-  end
-  f:write('\n')
+  f:write(string.format('%f, ', times[i]))
 end
+f:write(']\n')
+
+f:write('x1 = [ ')
+for i=1,#times do
+  f:write(string.format('%f, ', data['x_1'][times[i]][1]))
+end
+f:write(']\n')
+
+f:write('y1 = [ ')
+for i=1,#times do
+  f:write(string.format('%f, ', data['x_1'][times[i]][2]))
+end
+f:write(']\n')
+
+f:write('x2 = [ ')
+for i=1,#times do
+  f:write(string.format('%f, ', data['x_2'][times[i]][1]))
+end
+f:write(']\n')
+
+f:write('y2 = [ ')
+for i=1,#times do
+  f:write(string.format('%f, ', data['x_2'][times[i]][2]))
+end
+f:write(']\n')
+
+f:write('scatter(x1, y1)\n')
+f:write('scatter(x2, y2)\n')
+f:write('show()\n')
 f:close()
 

@@ -58,13 +58,13 @@ static void nsq_init(void* context, real_t t)
 
 static real_t nsq_max_dt(void* context, real_t t, char* reason)
 {
-  nsq_t* nsq = context;
+//  nsq_t* nsq = context;
 
   // The timestep is limited by the ratio of the maximum acceleration to 
   // the minimum speed.
   snprintf(reason, POLYMEC_MODEL_MAXDT_REASON_SIZE,
            "ratio of max acceleration to minimum speed");
-  return 0.2 * (nsq->a_max / nsq->v_min);
+  return REAL_MAX;//0.2 * (nsq->a_max / nsq->v_min);
 }
 
 static real_t nsq_advance(void* context, real_t max_dt, real_t t)
@@ -130,6 +130,7 @@ static int nsq_accel(void* context, real_t t, real_t* U, real_t* dUdt)
       a.y += G * m2 * r12.y * r3_inv;
       a.z += G * m2 * r12.z * r3_inv;
     }
+//log_debug("%d: a = %g %g %g", i, a.x, a.y, a.z);
     nsq->a_max = MAX(nsq->a_max, vector_mag(&a));
     nsq->v_min = MIN(nsq->v_min, vector_mag(&v1));
 
