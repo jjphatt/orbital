@@ -10,7 +10,35 @@ typedef struct
   ode_solver_t* solver;
   real_t* U;
   real_t v_min, a_max;
+  real_t E0; // initial energy.
 } nsq_t;
+
+static real_t nsq_total_energy(nsq_t* nsq)
+{
+  // The total energy in the system is the sum of gravitational 
+  // potentials plus kinetic energies.
+  real_t E = 0.0, G = nsq->G;
+  for (size_t b = 0; b < nsq->bodies->size; ++b)
+  {
+    body_t* b1 = nsq->bodies->data[b];
+    real_t m1 = b1->m;
+    real_t vx = nsq->U[6*b+3];
+    real_t vy = nsq->U[6*b+4];
+    real_t vz = nsq->U[6*b+5];
+    E += 0.5 * m1 * (vx*vx + vy*vy + vz*vz);
+    point_t x1 = {.x = nsq->U[6*b], .y = nsq->U[6*b+1], .z = nsq->U[6*b+2]};
+    for (size_t bb = 0; bb < nsq->bodies->size; ++bb)
+    {
+      if (b == bb) continue;
+      body_t* b2 = nsq->bodies->data[bb];
+      real_t m2 = b2->m;
+      point_t x2 = {.x = nsq->U[6*bb], .y = nsq->U[6*bb+1], .z = nsq->U[6*bb+2]};
+      real_t r2 = point_square_distance(&x1, &x2);
+      E += G * m1 * m2 / r2;
+    }
+  }
+  return E;
+}
 
 static void nsq_init(void* context, real_t t)
 {
@@ -54,6 +82,9 @@ static void nsq_init(void* context, real_t t)
 
   if (nsq->v_min == 0.0)
     nsq->v_min = 0.2 * nsq->a_max;
+
+  // Compute the initial energy of the system.
+  nsq->E0 = nsq_total_energy(nsq);
 }
 
 static real_t nsq_max_dt(void* context, real_t t, char* reason)
@@ -81,6 +112,10 @@ static real_t nsq_advance(void* context, real_t max_dt, real_t t)
 
 static void nsq_finalize(void* context, int step, real_t t)
 {
+  // Compute the final energy and compare it to the initial energy.
+  nsq_t* nsq = context;
+  real_t E = nsq_total_energy(nsq);
+  log_detail("Fractional energy change: %g", (E - nsq->E0) / nsq->E0 - 1.0);
 }
 
 static void nsq_add_probe(void* context, void* probe_context)
@@ -209,10 +244,13 @@ static void nsq_probe_set_model(void* context, void* model_context)
   nsq_probe_t* p = context;
   nsq_t* m = model_context;
   p->model = m;
-  for (size_t b = 0; b < m->bodies->size; ++b)
+  if (p->body_name != NULL)
   {
-    if (strcmp(p->body_name, m->bodies->data[b]->name) == 0)
-      p->body_index = b;
+    for (size_t b = 0; b < m->bodies->size; ++b)
+    {
+      if (strcmp(p->body_name, m->bodies->data[b]->name) == 0)
+        p->body_index = b;
+    }
   }
 }
 
@@ -240,10 +278,18 @@ static void nsq_probe_acquire_v(void* context, real_t t, probe_data_t* data)
   }
 }
 
+static void nsq_probe_acquire_E(void* context, real_t t, probe_data_t* data)
+{
+  nsq_probe_t* p = context;
+  nsq_t* m = p->model;
+  data->data[0] = nsq_total_energy(m);
+}
+
 static void nsq_probe_dtor(void* context)
 {
   nsq_probe_t* p = context;
-  string_free(p->body_name);
+  if (p->body_name != NULL)
+    string_free(p->body_name);
   polymec_free(p);
 }
 
@@ -275,5 +321,19 @@ probe_t* n_squared_v_probe_new(const char* body_name)
                          .acquire = nsq_probe_acquire_v,
                          .dtor = nsq_probe_dtor};
   return probe_new(probe_name, data_name, 1, shape, nsq_p, vtable);
+}
+
+probe_t* n_squared_E_probe_new()
+{
+  char probe_name[129], data_name[129];
+  snprintf(probe_name, 128, "Total energy");
+  snprintf(data_name, 128, "E");
+  nsq_probe_t* nsq_p = polymec_malloc(sizeof(nsq_probe_t));
+  nsq_p->body_name = NULL;
+  nsq_p->body_index = -1;
+  probe_vtable vtable = {.set_model = nsq_probe_set_model,
+                         .acquire = nsq_probe_acquire_E,
+                         .dtor = nsq_probe_dtor};
+  return probe_new(probe_name, data_name, 0, NULL, nsq_p, vtable);
 }
 

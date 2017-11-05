@@ -183,6 +183,12 @@ static int n2_v_probe(lua_State* L)
   return 1;
 }
 
+static int n2_E_probe(lua_State* L)
+{
+  lua_push_probe(L, n_squared_E_probe_new());
+  return 1;
+}
+
 static void lua_register_n_squared(lua_State* L)
 {
   // Create a new table and fill it with our gravity models.
@@ -196,6 +202,9 @@ static void lua_register_n_squared(lua_State* L)
 
   lua_pushcfunction(L, n2_v_probe);
   lua_setfield(L, -2, "v_probe");
+
+  lua_pushcfunction(L, n2_E_probe);
+  lua_setfield(L, -2, "E_probe");
 
   lua_setglobal(L, "n_squared");
 }

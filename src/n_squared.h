@@ -15,5 +15,9 @@ probe_t* n_squared_x_probe_new(const char* body_name);
 
 // Creates a probe that tracks the velocity of the body with the given name.
 probe_t* n_squared_v_probe_new(const char* body_name);
+
+// Creates a probe that tracks the total energy of the system.
+probe_t* n_squared_E_probe_new(void);
+
 #endif
 

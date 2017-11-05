@@ -21,56 +21,114 @@ n2 = n_squared.new{G = 1, bodies = {b1, b2}, fixed_dt = dt}
 -- Now wire up some probes and set acquisition times.
 T = 2*math.pi
 times = {}
-for i = 0,10 do
-  times[i+1] = 0.1*i*T
+for i = 0,20 do
+--  times[i+1] = 0.1*i*T
+  times[i+1] = i*dt
 end
-n2:add_probe(n_squared.x_probe('1'), times)
-n2:add_probe(n_squared.v_probe('1'), times)
-n2:add_probe(n_squared.x_probe('2'), times)
-n2:add_probe(n_squared.v_probe('2'), times)
+px1 = n_squared.x_probe('1')
+pv1 = n_squared.v_probe('1')
+px2 = n_squared.x_probe('2')
+pv2 = n_squared.v_probe('2')
+pE = n_squared.E_probe()
+n2:add_probe(px1, times)
+n2:add_probe(pv1, times)
+n2:add_probe(px2, times)
+n2:add_probe(pv2, times)
+n2:add_probe(pE, times)
 
 -- Run the thing.
 n2:run{t1 = 0, t2 = 2*math.pi, max_steps = N_steps}
 
 -- Extract data and write to a file.
-data = n2:data()
-print(data)
-vars = {'x_1', 'v_1', 'x_2', 'v_2'}
-f = io.open('binary1.py', 'w')
-f:write('from pylab import *\n')
+--data = n2:data()
+--print(data)
 
+f = io.open('binary1.py', 'w')
+
+x1 = n2:data(px1:data_name())
 f:write('t = [ ')
-for i=1,#times do
-  f:write(string.format('%f, ', times[i]))
+for i=1,#x1.times do
+  f:write(string.format('%f, ', x1.times[i]))
 end
 f:write(']\n')
 
 f:write('x1 = [ ')
-for i=1,#times do
-  f:write(string.format('%f, ', data['x_1'][times[i]][1]))
+for i=1,#x1.values do
+  f:write(string.format('%f, ', x1.values[i][1]))
 end
 f:write(']\n')
 
 f:write('y1 = [ ')
-for i=1,#times do
-  f:write(string.format('%f, ', data['x_1'][times[i]][2]))
+for i=1,#x1.values do
+  f:write(string.format('%f, ', x1.values[i][2]))
 end
 f:write(']\n')
 
+x2 = n2:data(px2:data_name())
 f:write('x2 = [ ')
-for i=1,#times do
-  f:write(string.format('%f, ', data['x_2'][times[i]][1]))
+for i=1,#x2.values do
+  f:write(string.format('%f, ', x2.values[i][1]))
 end
 f:write(']\n')
 
 f:write('y2 = [ ')
-for i=1,#times do
-  f:write(string.format('%f, ', data['x_2'][times[i]][2]))
+for i=1,#x2.values do
+  f:write(string.format('%f, ', x2.values[i][2]))
 end
 f:write(']\n')
 
-f:write('scatter(x1, y1)\n')
-f:write('scatter(x2, y2)\n')
+-- Velocity magnitudes
+v1 = n2:data(pv1:data_name())
+f:write('v1 = [ ')
+for i=1,#v1.values do
+  vx = v1.values[i][1]
+  vy = v1.values[i][2]
+  f:write(string.format('%f, ', math.sqrt(vx*vx + vy*vy)))
+end
+f:write(']\n')
+
+v2 = n2:data(pv2:data_name())
+f:write('v2 = [ ')
+for i=1,#v2.values do
+  vx = v2.values[i][1]
+  vy = v2.values[i][2]
+  f:write(string.format('%f, ', math.sqrt(vx*vx + vy*vy)))
+end
+f:write(']\n')
+
+-- Energy of the system 
+E = n2:data(pE:data_name())
+f:write('E = [ ')
+for i=1,#E.values do
+  f:write(string.format('%f, ', E.values[i]))
+end
+f:write(']\n')
+
+f:write('from pylab import *\n')
+
+f:write('scatter(x1, y1, c="r")\n')
+f:write('scatter(x2, y2, c="b")\n')
+f:write('title("Body positions")\n')
+
+f:write('figure()\n')
+f:write('plot(t, x1, "r")\n')
+f:write('plot(t, y1, "b")\n')
+f:write('title("Body 1 coordinates")\n')
+
+f:write('figure()\n')
+f:write('plot(t, x2, "r")\n')
+f:write('plot(t, y2, "b")\n')
+f:write('title("Body 2 coordinates")\n')
+
+f:write('figure()\n')
+f:write('plot(t, v1, "r")\n')
+f:write('plot(t, v2, "b")\n')
+f:write('title("Velocity magnitudes")\n')
+
+f:write('figure()\n')
+f:write('plot(t, E)\n')
+f:write('title("Total energy")\n')
+
 f:write('show()\n')
 f:close()
 
