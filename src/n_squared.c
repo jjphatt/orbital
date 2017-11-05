@@ -2,6 +2,7 @@
 // All rights reserved.
 
 #include "n_squared.h"
+#include "verlet_ode_solver.h"
 
 typedef struct
 {
@@ -55,33 +56,6 @@ static void nsq_init(void* context, real_t t)
     nsq->U[6*b+5] = body->v.z;
     nsq->v_min = MIN(nsq->v_min, vector_mag(&body->v));
   }
-//printf("U = [ ");
-//for (size_t b = 0; b < nsq->bodies->size; ++b)
-//for (int i = 0; i < 6; ++i)
-//printf("%g ", nsq->U[6*b+i]);
-//printf("]\n");
-
-  // Compute the maximum acceleration on any body.
-  real_t G = nsq->G;
-  nsq->a_max = 0.0;
-  for (size_t b = 0; b < nsq->bodies->size; ++b)
-  {
-//    body_t* b1 = nsq->bodies->data[b];
-    point_t x1 = {.x = nsq->U[6*b], .y = nsq->U[6*b+1], .z = nsq->U[6*b+2]};
-    for (size_t bb = 0; bb < nsq->bodies->size; ++bb)
-    {
-      if (b == bb) continue;
-      body_t* b2 = nsq->bodies->data[bb];
-      point_t x2 = {.x = nsq->U[6*bb], .y = nsq->U[6*bb+1], .z = nsq->U[6*bb+2]};
-      vector_t r12;
-      point_displacement(&x1, &x2, &r12);
-      real_t r2 = vector_dot(&r12, &r12);
-      nsq->a_max = MAX(nsq->a_max, G * b2->m / r2);
-    }
-  }
-
-  if (nsq->v_min == 0.0)
-    nsq->v_min = 0.2 * nsq->a_max;
 
   // Compute the initial energy of the system.
   nsq->E0 = nsq_total_energy(nsq);
@@ -118,10 +92,6 @@ static void nsq_finalize(void* context, int step, real_t t)
   log_detail("Fractional energy change: %g", (E - nsq->E0) / nsq->E0 - 1.0);
 }
 
-static void nsq_add_probe(void* context, void* probe_context)
-{
-}
-
 static void nsq_dtor(void* context)
 {
   nsq_t* nsq = context;
@@ -132,15 +102,9 @@ static void nsq_dtor(void* context)
 }
 
 // Solver functions.
-static int nsq_accel(void* context, real_t t, real_t* U, real_t* dUdt)
+static int nsq_accel(void* context, real_t t, real_t* U, real_t* dvdt)
 {
   nsq_t* nsq = context;
-//printf("U = [ ");
-//for (size_t b = 0; b < nsq->bodies->size; ++b)
-//for (int i = 0; i < 6; ++i)
-//printf("%g ", U[6*b+i]);
-//printf("]\n");
-
   real_t G = nsq->G;
   nsq->a_max = 0.0;
   nsq->v_min = REAL_MAX;
@@ -159,50 +123,28 @@ static int nsq_accel(void* context, real_t t, real_t* U, real_t* dUdt)
       point_displacement(&x1, &x2, &r12);
       real_t r = vector_mag(&r12);
       real_t r3_inv = 1.0 / (r*r*r);
-//  log_debug("x1 = %g %g %g, x2 = %g %g %g\n", x1.x, x1.y, x1.z, x2.x, x2.y, x2.z);
-//  log_debug("r = %g\n", r);
       a.x += G * m2 * r12.x * r3_inv;
       a.y += G * m2 * r12.y * r3_inv;
       a.z += G * m2 * r12.z * r3_inv;
     }
-//log_debug("%d: a = %g %g %g", i, a.x, a.y, a.z);
     nsq->a_max = MAX(nsq->a_max, vector_mag(&a));
     nsq->v_min = MIN(nsq->v_min, vector_mag(&v1));
 
-    // Compute derivatives.
-    dUdt[6*i]   = U[6*i+3];
-    dUdt[6*i+1] = U[6*i+4];
-    dUdt[6*i+2] = U[6*i+5];
-    dUdt[6*i+3] = a.x;
-    dUdt[6*i+4] = a.y;
-    dUdt[6*i+5] = a.z;
+    // Update the acceleration.
+    dvdt[3*i]   = a.x;
+    dvdt[3*i+1] = a.y;
+    dvdt[3*i+2] = a.z;
   }
 //  log_debug("a_max = %g\n", nsq->a_max);
   return 0;
 }
 
-//static real_t nsq_stable_dt(void* context, real_t t, real_t* U)
-//{
-//  nsq_t* nsq = context;
-//  return 0.2 * (nsq->a_max / nsq->v_min);
-//}
+//------------------------------------------------------------------------
 
-// API
 model_t* n_squared_new(real_t G,
                        body_array_t* bodies)
 {
   ASSERT(G >= 0.0);
-
-  nsq_t* nsq = polymec_malloc(sizeof(nsq_t));
-  nsq->G = G;
-  nsq->bodies = bodies;
-  nsq->U = polymec_malloc(sizeof(real_t) * 6 * bodies->size);
-
-  // Set up an explicit RK4 solver.
-  nsq->solver = explicit_ark_ode_solver_new(4, MPI_COMM_SELF, 
-                                            (int)(6 * bodies->size), 0,
-                                            nsq, nsq_accel, NULL, //nsq_stable_dt, 
-                                            NULL);
 
   // Find out whether we have a Schwartzchild body.
   int sc_index = -1;
@@ -220,12 +162,20 @@ model_t* n_squared_new(real_t G,
   if (sc_index != -1)
     body_array_swap(bodies, 0, sc_index);
 
+  nsq_t* nsq = polymec_malloc(sizeof(nsq_t));
+  nsq->G = G;
+  nsq->bodies = bodies;
+  nsq->U = polymec_malloc(sizeof(real_t) * 6 * bodies->size);
+
+  // Set up a Verlet solver.
+  nsq->solver = verlet_ode_solver_new(MPI_COMM_SELF, (int)bodies->size,
+                                      nsq, nsq_accel, NULL);
+
   // Now create the model.
   model_vtable vtable = {.init = nsq_init,
                          .max_dt = nsq_max_dt,
                          .advance = nsq_advance,
                          .finalize = nsq_finalize,
-                         .add_probe = nsq_add_probe,
                          .dtor = nsq_dtor};
   return model_new("N-squared", nsq, vtable, MODEL_SERIAL);
 }

@@ -150,17 +150,6 @@ static int n2_new(lua_State* L)
   // Create the thingy and push it to the stack.
   model_t* n2 = n_squared_new(G, bodies);
 
-  // Are we given a fixed dt?
-  real_t fixed_dt = 0.0;
-  lua_getfield(L, 1, "fixed_dt");
-  if (lua_isnumber(L, -1))
-  {
-    fixed_dt = lua_to_real(L, -1);
-    if (fixed_dt <= 0.0)
-      luaL_error(L, "fixed_dt must be positive.");
-    model_set_max_dt(n2, fixed_dt);
-  }
-
   lua_push_model(L, n2);
   return 1;
 }

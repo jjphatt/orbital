@@ -2,8 +2,7 @@
 -- in a circle.
 
 -- Options
-dt = options.fixed_dt
-N_steps = options.max_steps or 10000
+dt = options.fixed_dt or 1e-2
 
 b1 = body.new{name = '1', 
               m = 4,
@@ -16,14 +15,19 @@ b2 = body.new{name = '2',
               v = vector.new(0, 1, 0)}
 
 -- Create our model.
-n2 = n_squared.new{G = 1, bodies = {b1, b2}, fixed_dt = dt}
+n2 = n_squared.new{G = 1, bodies = {b1, b2}}
+
+-- Figure out how long to run, and set the max number of steps.
+T = 2*math.pi
+N_steps = 2 * math.floor(T/dt)
+if options.max_steps and (options.max_steps < N_steps) then
+  N_steps = options.max_steps
+end
 
 -- Now wire up some probes and set acquisition times.
-T = 2*math.pi
 times = {}
-for i = 0,20 do
---  times[i+1] = 0.1*i*T
-  times[i+1] = i*dt
+for i = 0,T/dt do
+  times[i+1] = i*T/100
 end
 px1 = n_squared.x_probe('1')
 pv1 = n_squared.v_probe('1')
@@ -37,7 +41,10 @@ n2:add_probe(pv2, times)
 n2:add_probe(pE, times)
 
 -- Run the thing.
-n2:run{t1 = 0, t2 = 2*math.pi, max_steps = N_steps}
+n2:run{t1 = 0, 
+       t2 = T,
+       max_steps = N_steps,
+       max_dt = dt}
 
 -- Extract data and write to a file.
 --data = n2:data()
