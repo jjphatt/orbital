@@ -30,6 +30,7 @@ for i = 1,N do
                        x = point.random(gen, box),
                        v = vector.random(gen, v_max * gen:uniform())}
 end
+print(bodies[1])
 
 -- Create our model.
 n2 = n_squared.new{G = G, bodies = bodies}
@@ -84,7 +85,7 @@ function write_vector_arrays(file, name, array)
 end
 
 data = n2:data()
-print(dir(data))
+--print(dir(data)) -- produces 'invalid key' error.
 f = io.open('random.py', 'w')
 write_array(f, 't', times)
 for i = 1,N do
