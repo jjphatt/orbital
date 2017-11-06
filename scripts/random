@@ -1,0 +1,98 @@
+-- This generates a random system of bodies that are gravitationally 
+-- attracted to one another.
+
+-- Options.
+N = options.N or 10                   -- Number of bodies
+L = options.L or 1                    -- Length on a side of a cubic bounding box
+seed = options.seed or 123456         -- Random number generator seed
+dt = options.fixed_dt or 1e-2         -- Fixed timestep
+G = options.G or constants.G          -- Gravitational constant
+m_min = options.m_min or 1            -- Minimum mass
+m_max = options.max_mass or 100       -- Maximum mass
+v_max = options.max_mass or 100       -- Maximum velocity
+T = options.T or 1                    -- Final time
+max_steps = options.max_steps or 1000 -- Maximum number of steps
+
+-- First and foremost, we need a random number generator.
+gen = rng.host()
+gen:set_seed(seed)
+
+-- Set up a bounding box.
+box = bbox.new{x1 = 0, x2 = L, 
+               y1 = 0, y2 = L,
+               z1 = 0, z2 = L}
+
+-- Generate N bodies with random masses, positions, velocities.
+bodies = {}
+for i = 1,N do
+  bodies[i] = body.new{name = string.format('body_%d', i),
+                       m = math.max(m_min, m_max * gen:uniform()),
+                       x = point.random(gen, box),
+                       v = vector.random(gen, v_max * gen:uniform())}
+end
+
+-- Create our model.
+n2 = n_squared.new{G = G, bodies = bodies}
+
+-- Now wire up some probes and set acquisition times.
+times = {}
+for i = 0,T/dt do
+  times[i+1] = i*dt
+end
+for i = 1,N do
+  px = n_squared.x_probe(bodies[i].name)
+  n2:add_probe(px, times)
+  pv = n_squared.v_probe(bodies[i].name)
+  n2:add_probe(pv, times)
+end
+pE = n_squared.E_probe()
+n2:add_probe(pE, times)
+
+-- Run the thing.
+n2:run{t1 = 0, 
+       t2 = T,
+       max_steps = max_steps,
+       max_dt = dt}
+
+-- Extract data and write to a file.
+function write_array(file, name, array)
+  file:write(string.format('%s = [ ', name))
+  for i=1,#array do
+    file:write(string.format('%f, ', array[i]))
+  end
+  file:write(']\n')
+end
+
+function write_vector_arrays(file, name, array)
+  file:write(string.format('%s_x = [ ', name))
+  for i=1,#array do
+    file:write(string.format('%f, ', array[i][1]))
+  end
+  file:write(']\n')
+
+  file:write(string.format('%s_y = [ ', name))
+  for i=1,#array do
+    file:write(string.format('%f, ', array[i][2]))
+  end
+  file:write(']\n')
+
+  file:write(string.format('%s_z = [ ', name))
+  for i=1,#array do
+    file:write(string.format('%f, ', array[i][3]))
+  end
+  file:write(']\n')
+end
+
+data = n2:data()
+print(dir(data))
+f = io.open('random.py', 'w')
+write_array(f, 't', times)
+for i = 1,N do
+  x_name = string.format('x_body_%d', i)
+  write_vector_arrays(f, x_name, data[x_name].values)
+  v_name = string.format('v_body_%d', i)
+  write_vector_arrays(f, v_name, data[v_name].values)
+end
+write_array(f, 'E', data['E'].values)
+
+f:close()
