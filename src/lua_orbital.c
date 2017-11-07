@@ -92,7 +92,7 @@ static lua_record_field body_fields[] = {
 static int body_tostring(lua_State* L)
 {
   body_t* b = lua_to_body(L, 1);
-  lua_pushfstring(L, "body (name = %s, m = %g, x = (%g, %g, %g), v = (%g, %g, %g))", 
+  lua_pushfstring(L, "body (name = %s, m = %f, x = (%f, %f, %f), v = (%f, %f, %f))", 
                   b->name, b->m, b->x.x, b->x.y, b->x.z, b->v.x, b->v.y, b->v.z);
   return 1;
 }
