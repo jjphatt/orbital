@@ -149,29 +149,20 @@ static int brute_force_accel(void* context, real_t t, real_t* U, real_t* dvdt)
   return 0;
 }
 
-static void barnes_hut_compute_force(void* context, 
-                                     int i, point_t* xi,
-                                     int j, point_t* xj,
-                                     vector_t* Fij)
-{
-  nbody_t* nb = context;
-  real_t G = nb->G;
-  real_t mi = nb->bodies->data[i]->m;
-  real_t mj = nb->bodies->data[j]->m;
-  vector_t rij;
-  point_displacement(xi, xj, &rij);
-  real_t r = vector_mag(&rij);
-  real_t r3_inv = 1.0 / (r*r*r);
-  Fij->x = G * mi * mj * rij.x * r3_inv;
-  Fij->y += G * mi * mj * rij.y * r3_inv;
-  Fij->z += G * mi * mj * rij.z * r3_inv;
-}
-
 static int barnes_hut_accel(void* context, real_t t, real_t* U, real_t* dvdt)
 {
   nbody_t* nb = context;
-  barnes_hut_tree_compute_forces(nb->tree, nb->bodies, (vector_t*)dvdt);
   int N = (int)(nb->bodies->size);
+  point_t x[N];
+  real_t m[N];
+  for (int i = 0; i < N; ++i)
+  {
+    x[i].x = U[6*i];
+    x[i].y = U[6*i+1];
+    x[i].z = U[6*i+2];
+    m[i] = nb->bodies->data[i]->m;
+  }
+  barnes_hut_tree_compute_forces(nb->tree, nb->G, x, m, N, (vector_t*)dvdt);
   for (int i = 0; i < N; ++i)
     dvdt[i] /= nb->bodies->data[i]->m;
 
@@ -239,8 +230,7 @@ model_t* barnes_hut_nbody_new(real_t G,
   nb->G = G;
   nb->bodies = bodies;
   nb->tree = barnes_hut_tree_new(MPI_COMM_WORLD, 
-                                 theta,
-                                 barnes_hut_compute_force);
+                                 theta);
   
   nb->U = polymec_malloc(sizeof(real_t) * 6 * bodies->size);
 

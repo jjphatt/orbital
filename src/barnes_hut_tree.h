@@ -7,7 +7,15 @@
 #include "body.h"
 
 // A Barnes-Hut tree is a specialized, distributed octree that provides a 
-// near/far-field approximation scheme for the n-body problem.
+// near/far-field approximation scheme for the n-body problem. Specifically, 
+// this tree computes the forces on a set of points, where the forces are of 
+// the form
+//
+//                     K * qi * qj
+//           F(i, j) = -----------
+//                               2
+//                      |xi - xj|
+//
 typedef struct barnes_hut_tree_t barnes_hut_tree_t;
 
 // Creates a new Barnes-Hut tree on the given MPI communicator, containing the 
@@ -16,22 +24,25 @@ typedef struct barnes_hut_tree_t barnes_hut_tree_t;
 //  theta         -- A parameter that determines when to use the far-field 
 //                   approximation for a force between two bodies 
 //                   (typically 0.5).
-//  compute_force -- A function that computes the force on point i due to 
-//                   point j, storing the result in the vector Fij.
-// typically 0.5. The tree copies data from the array of bodies.
 barnes_hut_tree_t* barnes_hut_tree_new(MPI_Comm comm, 
-                                       real_t theta,
-                                       void (*compute_force)(void* context, int i, point_t* xi, int j, point_t* xj, vector_t* Fij));
+                                       real_t theta);
 
 // Frees the Barnes-Hut tree.
 void barnes_hut_tree_free(barnes_hut_tree_t* tree);
 
-// Computes the forces on the given set of bodies, storing the force 
-// vectors in the forces array. forces[i] contains the net force on the ith 
-// body in bodies.
+// Computes the forces on the given N points, storing the force 
+// vectors in the forces array. Arguments:
+//  K       -- The coupling constant for the force F(i, j).
+//  points  -- An array of N points.
+//  charges -- An array of N charges for the points.
+//  N       -- The number of points.
+//  forces  -- An array with room to store N vector-valued forces.
 void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
-                                    body_array_t* bodies,
-                                    vector_t* forces);                                     
+                                    real_t K,
+                                    point_t* points,
+                                    real_t* charges,
+                                    int N,
+                                    vector_t* forces);
 
 #endif
 
