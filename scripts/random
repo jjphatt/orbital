@@ -30,7 +30,7 @@ for i = 1,N do
                        x = point.random(gen, box),
                        v = vector.random(gen, v_max * gen:uniform())}
 end
-print(bodies[1])
+print(string.format('Generated %d bodies.', N))
 
 -- Create our model.
 n2 = n_squared.new{G = G, bodies = bodies}
@@ -50,10 +50,12 @@ pE = n_squared.E_probe()
 n2:add_probe(pE, times)
 
 -- Run the thing.
+print('Running...')
 n2:run{t1 = 0, 
        t2 = T,
        max_steps = max_steps,
        max_dt = dt}
+print('Finished.')
 
 -- Extract data and write to a file.
 function write_array(file, name, array)

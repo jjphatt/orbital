@@ -102,18 +102,13 @@ static lua_record_metamethod body_mm[] = {
   {NULL, NULL}
 };
 
-// This function constructs our "n squared" model. It takes a table of 
-// arguments.
-static int n2_new(lua_State* L)
+static void get_nbody_args(lua_State* L, real_t* G, body_array_t** bodies)
 {
-  if ((lua_gettop(L) != 1) || !lua_istable(L, 1))
-    luaL_error(L, "Argument must be a table of parameters and bodies.");
-
   // Where all our bodies at?
   lua_getfield(L, 1, "bodies");
   if (!lua_istable(L, -1))
     luaL_error(L, "bodies must be a list of body objects.");
-  body_array_t* bodies = body_array_new();
+  *bodies = body_array_new();
   {
     int i = 1;
     bool have_swartzchild_body = false;
@@ -131,7 +126,7 @@ static int n2_new(lua_State* L)
         else
           have_swartzchild_body = true;
       }
-      body_array_append(bodies, b);
+      body_array_append(*bodies, b);
       lua_pop(L, 1);
       ++i;
     }
@@ -139,64 +134,109 @@ static int n2_new(lua_State* L)
   lua_pop(L, 1);
 
   // Are we given a gravitational constant G?
-  real_t G = GRAVITATIONAL_CONSTANT;
+  *G = GRAVITATIONAL_CONSTANT;
   lua_getfield(L, 1, "G");
   if (lua_isnumber(L, -1))
   {
-    G = lua_to_real(L, -1);
-    if (G <= 0.0)
+    *G = lua_to_real(L, -1);
+    if (*G <= 0.0)
       luaL_error(L, "G must be positive.");
+  }
+}
+
+// This function constructs our brute-force n-body model. It takes a table 
+// of arguments.
+static int nb_brute_force(lua_State* L)
+{
+  if ((lua_gettop(L) != 1) || !lua_istable(L, 1))
+    luaL_error(L, "Argument must be a table of parameters and bodies.");
+
+  // Fetch our parameters.
+  real_t G;
+  body_array_t* bodies;
+  get_nbody_args(L, &G, &bodies);
+
+  // Create the thingy and push it to the stack.
+  model_t* nb = brute_force_nbody_new(G, bodies);
+
+  lua_push_model(L, nb);
+  return 1;
+}
+
+// This function constructs our Barnes-Hut hierarchical n-body model. It 
+// takes a table of arguments.
+static int nb_barnes_hut(lua_State* L)
+{
+  if ((lua_gettop(L) != 1) || !lua_istable(L, 1))
+    luaL_error(L, "Argument must be a table of parameters and bodies.");
+
+  // Fetch our parameters.
+  real_t G;
+  body_array_t* bodies;
+  get_nbody_args(L, &G, &bodies);
+
+  // Are we given a far-field parameter theta?
+  real_t theta = 0.5;
+  lua_getfield(L, 1, "theta");
+  if (lua_isnumber(L, -1))
+  {
+    theta = lua_to_real(L, -1);
+    if (theta < 0.0)
+      luaL_error(L, "theta must be non-negative.");
   }
 
   // Create the thingy and push it to the stack.
-  model_t* n2 = n_squared_new(G, bodies);
+  model_t* nb = barnes_hut_nbody_new(G, theta, bodies);
 
-  lua_push_model(L, n2);
+  lua_push_model(L, nb);
   return 1;
 }
 
-static int n2_x_probe(lua_State* L)
+static int nb_x_probe(lua_State* L)
 {
   if (!lua_isstring(L, 1))
     luaL_error(L, "Argument must be the name of a body.");
   const char* name = lua_tostring(L, 1);
-  lua_push_probe(L, n_squared_x_probe_new(name));
+  lua_push_probe(L, nbody_x_probe_new(name));
   return 1;
 }
 
-static int n2_v_probe(lua_State* L)
+static int nb_v_probe(lua_State* L)
 {
   if (!lua_isstring(L, 1))
     luaL_error(L, "Argument must be the name of a body.");
   const char* name = lua_tostring(L, 1);
-  lua_push_probe(L, n_squared_v_probe_new(name));
+  lua_push_probe(L, nbody_v_probe_new(name));
   return 1;
 }
 
-static int n2_E_probe(lua_State* L)
+static int nb_E_probe(lua_State* L)
 {
-  lua_push_probe(L, n_squared_E_probe_new());
+  lua_push_probe(L, nbody_E_probe_new());
   return 1;
 }
 
-static void lua_register_n_squared(lua_State* L)
+static void lua_register_nbody(lua_State* L)
 {
   // Create a new table and fill it with our gravity models.
   lua_newtable(L);
 
-  lua_pushcfunction(L, n2_new);
-  lua_setfield(L, -2, "new");
+  lua_pushcfunction(L, nb_brute_force);
+  lua_setfield(L, -2, "brute_force");
 
-  lua_pushcfunction(L, n2_x_probe);
+  lua_pushcfunction(L, nb_barnes_hut);
+  lua_setfield(L, -2, "barnes_hut");
+
+  lua_pushcfunction(L, nb_x_probe);
   lua_setfield(L, -2, "x_probe");
 
-  lua_pushcfunction(L, n2_v_probe);
+  lua_pushcfunction(L, nb_v_probe);
   lua_setfield(L, -2, "v_probe");
 
-  lua_pushcfunction(L, n2_E_probe);
+  lua_pushcfunction(L, nb_E_probe);
   lua_setfield(L, -2, "E_probe");
 
-  lua_setglobal(L, "n_squared");
+  lua_setglobal(L, "nbody");
 }
 
 static void lua_register_constants(lua_State* L)
@@ -226,7 +266,7 @@ int lua_register_orbital_modules(lua_State* L)
 
   lua_register_record_type(L, "body", "A body in 3D space.", body_functions, body_fields, body_mm);
 
-  lua_register_n_squared(L);
+  lua_register_nbody(L);
   lua_register_constants(L);
   return 0;
 }

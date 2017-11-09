@@ -5,7 +5,7 @@
 #define ORBITAL_H
 
 #include "body.h"
-#include "n_squared.h"
+#include "nbody.h"
 
 #endif
 
