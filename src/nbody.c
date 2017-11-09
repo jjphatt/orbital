@@ -178,13 +178,8 @@ static int barnes_hut_accel(void* context, real_t t, real_t* U, real_t* dvdt)
   return 0;
 }
 
-//------------------------------------------------------------------------
-
-model_t* brute_force_nbody_new(real_t G,
-                               body_array_t* bodies)
+static void move_schwartzchild_body_to_front(body_array_t* bodies)
 {
-  ASSERT(G >= 0.0);
-
   // Find out whether we have a Schwartzchild body.
   int sc_index = -1;
   for (size_t b = 0; b < bodies->size; ++b)
@@ -200,6 +195,16 @@ model_t* brute_force_nbody_new(real_t G,
   // Swap any Schwartzchild body with the first one, to impose an ordering.
   if (sc_index != -1)
     body_array_swap(bodies, 0, sc_index);
+}
+
+//------------------------------------------------------------------------
+
+model_t* brute_force_nbody_new(real_t G,
+                               body_array_t* bodies)
+{
+  ASSERT(G >= 0.0);
+
+  move_schwartzchild_body_to_front(bodies);
 
   nbody_t* nb = polymec_malloc(sizeof(nbody_t));
   nb->G = G;
@@ -228,21 +233,7 @@ model_t* barnes_hut_nbody_new(real_t G,
   ASSERT(G >= 0.0);
   ASSERT(theta >= 0.0);
 
-  // Find out whether we have a Schwartzchild body.
-  int sc_index = -1;
-  for (size_t b = 0; b < bodies->size; ++b)
-  {
-    body_t* body = bodies->data[b];
-    if (body->schwartzchild)
-    {
-      ASSERT(sc_index == -1); // Only one of these allowed!
-      sc_index = (int)b;
-    }
-  }
-
-  // Swap any Schwartzchild body with the first one, to impose an ordering.
-  if (sc_index != -1)
-    body_array_swap(bodies, 0, sc_index);
+  move_schwartzchild_body_to_front(bodies);
 
   nbody_t* nb = polymec_malloc(sizeof(nbody_t));
   nb->G = G;
