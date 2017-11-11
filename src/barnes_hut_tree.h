@@ -7,11 +7,11 @@
 #include "body.h"
 
 // A Barnes-Hut tree is a specialized, distributed octree that provides a 
-// near/far-field approximation scheme for the n-body problem. Specifically, 
+// near/far-field approximation scheme for the N-body problem. Specifically, 
 // this tree computes the forces on a set of points, where the forces are of 
 // the form
 //
-//                     K * qi * qj
+//                     G * mi * mj
 //           F(i, j) = -----------
 //                               2
 //                      |xi - xj|
@@ -32,15 +32,15 @@ void barnes_hut_tree_free(barnes_hut_tree_t* tree);
 
 // Computes the forces on the given N points, storing the force 
 // vectors in the forces array. Arguments:
-//  K       -- The coupling constant for the force F(i, j).
-//  points  -- An array of N points.
-//  charges -- An array of N charges for the points.
-//  N       -- The number of points.
-//  forces  -- An array with room to store N vector-valued forces.
+//  G      -- The coupling constant for the force F(i, j).
+//  points -- An array of N points.
+//  masses -- An array of N masses for the points.
+//  N      -- The number of points.
+//  forces -- An array with room to store N vector-valued forces.
 void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
-                                    real_t K,
+                                    real_t G,
                                     point_t* points,
-                                    real_t* charges,
+                                    real_t* masses,
                                     int N,
                                     vector_t* forces);
 

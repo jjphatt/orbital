@@ -21,7 +21,6 @@ body_t* body_new(const char* name,
   b->m = m;
   b->x = *x;
   b->v = *v;
-  b->schwartzchild = false;
   return b;
 }
 

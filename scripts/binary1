@@ -15,7 +15,8 @@ b2 = body.new{name = '2',
               v = vector.new(0, 1, 0)}
 
 -- Create our model.
-n2 = n_squared.new{G = 1, bodies = {b1, b2}}
+--n2 = nbody.brute_force{G = 1, bodies = {b1, b2}}
+n2 = nbody.barnes_hut{G = 1, bodies = {b1, b2}}
 
 -- Figure out how long to run, and set the max number of steps.
 T = 2*math.pi
@@ -29,11 +30,11 @@ times = {}
 for i = 0,T/dt do
   times[i+1] = i*T/100
 end
-px1 = n_squared.x_probe('1')
-pv1 = n_squared.v_probe('1')
-px2 = n_squared.x_probe('2')
-pv2 = n_squared.v_probe('2')
-pE = n_squared.E_probe()
+px1 = nbody.x_probe('1')
+pv1 = nbody.v_probe('1')
+px2 = nbody.x_probe('2')
+pv2 = nbody.v_probe('2')
+pE = nbody.E_probe()
 n2:add_probe(px1, times)
 n2:add_probe(pv1, times)
 n2:add_probe(px2, times)

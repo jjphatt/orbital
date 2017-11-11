@@ -33,7 +33,7 @@ end
 print(string.format('Generated %d bodies.', N))
 
 -- Create our model.
-n2 = n_squared.new{G = G, bodies = bodies}
+n2 = nbody.brute_force{G = G, bodies = bodies}
 
 -- Now wire up some probes and set acquisition times.
 times = {}
@@ -41,12 +41,12 @@ for i = 0,T/dt do
   times[i+1] = i*dt
 end
 for i = 1,N do
-  px = n_squared.x_probe(bodies[i].name)
+  px = nbody.x_probe(bodies[i].name)
   n2:add_probe(px, times)
-  pv = n_squared.v_probe(bodies[i].name)
+  pv = nbody.v_probe(bodies[i].name)
   n2:add_probe(pv, times)
 end
-pE = n_squared.E_probe()
+pE = nbody.E_probe()
 n2:add_probe(pE, times)
 
 -- Run the thing.

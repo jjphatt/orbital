@@ -39,17 +39,8 @@ static int b_new(lua_State* L)
   return 1;
 }
 
-static int b_sc(lua_State* L)
-{
-  b_new(L);
-  body_t* b = lua_to_body(L, -1);
-  b->schwartzchild = true;
-  return 1;
-}
-
 static lua_module_function body_functions[] = {
   {"new", b_new, "Creates a new massive body with name, m, x, v."},
-  {"schwartzchild", b_sc, "Creates a new Schwartzchild body with name, m, x, v."},
   {NULL, NULL, NULL}
 };
 
@@ -111,7 +102,6 @@ static void get_nbody_args(lua_State* L, real_t* G, body_array_t** bodies)
   *bodies = body_array_new();
   {
     int i = 1;
-    bool have_swartzchild_body = false;
     while (true)
     {
       lua_rawgeti(L, -1, i);
@@ -119,13 +109,6 @@ static void get_nbody_args(lua_State* L, real_t* G, body_array_t** bodies)
       if (!lua_is_body(L, -1))
         luaL_error(L, "Item %d in bodies is not a body.", i);
       body_t* b = lua_to_body(L, -1);
-      if (b->schwartzchild)
-      {
-        if (have_swartzchild_body)
-          luaL_error(L, "Only one body in bodies may be a schwartzchild body.");
-        else
-          have_swartzchild_body = true;
-      }
       body_array_append(*bodies, b);
       lua_pop(L, 1);
       ++i;

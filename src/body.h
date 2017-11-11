@@ -15,11 +15,6 @@ typedef struct
   real_t m;   // mass
   point_t x;  // position
   vector_t v; // velocity
-
-  // This flag is true iff this body should be regarded as massive enough 
-  // to impose relativistic effects on other bodies. Only one such body is 
-  // allowed into a classical calculation.
-  bool schwartzchild; 
 } body_t;
 
 // Creates a new body with a descriptive name, a mass m, a position x, 

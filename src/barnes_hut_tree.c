@@ -29,22 +29,22 @@ void barnes_hut_tree_free(barnes_hut_tree_t* tree)
 // underlying octree.
 typedef struct
 {
-  real_t total_charge;
-  point_t centroid;
+  real_t total_mass;
+  point_t center_of_mass;
   int num_points;
 } agg_t;
 
-DEFINE_ARRAY(agg_array, agg_t)
-
 typedef struct
 {
-  real_t K, theta;
+  real_t G, theta;
   real_t Lx, Ly, Lz;
-  agg_array_t* branches;
-  real_t* charges;
-  vector_t* forces;
-  int i;
-  point_t* x;
+  agg_t* branches;
+  real_t* masses;  // locally stored in the tree
+
+  // Data for "test mass"
+  real_t mi;
+  point_t* xi;
+  vector_t* Fi; 
 } force_calc_t;
 
 // This function aggregates branch data to its parent branch.
@@ -53,12 +53,12 @@ static bool aggregate_branch(void* context, int depth, int branch_index, int par
   force_calc_t* force_calc = context;
 
   // Aggregate this branch to its parent.
-  agg_t* b_agg = &(force_calc->branches->data[branch_index]);
-  agg_t* p_agg = &(force_calc->branches->data[parent_index]);
-  p_agg->total_charge += b_agg->total_charge;
-  p_agg->centroid.x += b_agg->centroid.x;
-  p_agg->centroid.y += b_agg->centroid.y;
-  p_agg->centroid.z += b_agg->centroid.z;
+  agg_t* b_agg = &(force_calc->branches[branch_index]);
+  agg_t* p_agg = &(force_calc->branches[parent_index]);
+  p_agg->total_mass += b_agg->total_mass;
+  p_agg->center_of_mass.x += b_agg->center_of_mass.x;
+  p_agg->center_of_mass.y += b_agg->center_of_mass.y;
+  p_agg->center_of_mass.z += b_agg->center_of_mass.z;
   p_agg->num_points += b_agg->num_points;
 
   // Visit our children.
@@ -71,11 +71,11 @@ static void aggregate_leaf(void* context, int index, point_t* point, int parent_
   force_calc_t* force_calc = context;
 
   // Aggregate this point.
-  agg_t* agg = &(force_calc->branches->data[parent_index]);
-  agg->total_charge += force_calc->charges[index];
-  agg->centroid.x += point->x;
-  agg->centroid.y += point->y;
-  agg->centroid.z += point->z;
+  agg_t* agg = &(force_calc->branches[parent_index]);
+  agg->total_mass += force_calc->masses[index];
+  agg->center_of_mass.x += point->x;
+  agg->center_of_mass.y += point->y;
+  agg->center_of_mass.z += point->z;
   ++(agg->num_points);
 }
 
@@ -84,9 +84,9 @@ static bool sum_branch_force(void* context, int depth, int branch_index, int par
 {
   force_calc_t* force_calc = context;
 
-  // Normalize the centroid for this branch node.
-  agg_t* agg = &(force_calc->branches->data[parent_index]);
-  point_t* xj = &(agg->centroid);
+  // Divide our CM by the number of leaves beneath this branch.
+  agg_t* agg = &(force_calc->branches[parent_index]);
+  point_t* xj = &(agg->center_of_mass);
   xj->x /= agg->num_points;
   xj->y /= agg->num_points;
   xj->z /= agg->num_points;
@@ -94,22 +94,21 @@ static bool sum_branch_force(void* context, int depth, int branch_index, int par
   // Should this branch be aggregated?
   real_t L = MAX(force_calc->Lx, MAX(force_calc->Ly, force_calc->Lz));
   real_t s = L * pow(0.5, depth);
-  point_t* xi = force_calc->x;
+  point_t* xi = force_calc->xi;
   real_t d = point_distance(xi, xj);
   if (s / d < force_calc->theta)
   {
     // Yup! We compute the force as though this branch and its children are 
-    // one big charge at the centroid.
-    int i = force_calc->i;
-    real_t K = force_calc->K;
-    real_t qi = force_calc->charges[i];
-    real_t qj = agg->total_charge;
+    // one big mass at the center of mass of the branch.
+    real_t G = force_calc->G;
+    real_t mi = force_calc->mi;
+    real_t mj = agg->total_mass;
     vector_t rij;
     point_displacement(xi, xj, &rij);
     real_t r3_inv = 1.0 / (d*d*d);
-    force_calc->forces[i].x += K * qi * qj * rij.x * r3_inv;
-    force_calc->forces[i].y += K * qi * qj * rij.y * r3_inv;
-    force_calc->forces[i].z += K * qi * qj * rij.z * r3_inv;
+    force_calc->Fi->x += G * mi * mj * rij.x * r3_inv;
+    force_calc->Fi->y += G * mi * mj * rij.y * r3_inv;
+    force_calc->Fi->z += G * mi * mj * rij.z * r3_inv;
     return false; // Don't visit our children.
   }
   else
@@ -121,41 +120,35 @@ static void sum_leaf_force(void* context, int j, point_t* xj, int parent_index)
 {
   force_calc_t* force_calc = context;
 
-  int i = force_calc->i;
-  if (i == j) return;
+  point_t* xi = force_calc->xi;
+  if (point_distance(xi, xj) < 1e-12)
+    return;
 
-  real_t K = force_calc->K;
-  real_t qi = force_calc->charges[i];
-  real_t qj = force_calc->charges[j];
-  point_t* xi = force_calc->x;
+  real_t G = force_calc->G;
+  real_t mi = force_calc->mi;
+  real_t mj = force_calc->masses[j];
   vector_t rij;
   point_displacement(xi, xj, &rij);
   real_t r = vector_mag(&rij);
   real_t r3_inv = 1.0 / (r*r*r);
-  force_calc->forces[i].x += K * qi * qj * rij.x * r3_inv;
-  force_calc->forces[i].y += K * qi * qj * rij.y * r3_inv;
-  force_calc->forces[i].z += K * qi * qj * rij.z * r3_inv;
+  force_calc->Fi->x += G * mi * mj * rij.x * r3_inv;
+  force_calc->Fi->y += G * mi * mj * rij.y * r3_inv;
+  force_calc->Fi->z += G * mi * mj * rij.z * r3_inv;
 }
 
 void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
-                                    real_t K,
+                                    real_t G,
                                     point_t* points,
-                                    real_t* charges,
+                                    real_t* masses,
                                     int N,
                                     vector_t* forces)
 {
-  ASSERT(K > 0.0);
+  ASSERT(G > 0.0);
 
-  // In the case of a single body, the force is zero.
-  if (N == 1)
-  {
-    forces[0].x = forces[0].y = forces[0].z = 0.0;
-    return;
-  }
-
-  // Compute a bounding box that contains all of the points.
-  bbox_t bbox;
-  bbox_make_empty_set(&bbox);
+  // Compute a bounding box that contains all of the local points.
+  bbox_t bbox = {.x1 = 0.0, .x2 = 1.0,
+                 .y1 = 0.0, .y2 = 1.0, 
+                 .z1 = 0.0, .z2 = 1.0};
   for (int i = 0; i < N; ++i)
     bbox_grow(&bbox, &(points[i]));
 
@@ -169,26 +162,66 @@ void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
   force_calc.Lx = bbox.x2 - bbox.x1;
   force_calc.Ly = bbox.y2 - bbox.y1;
   force_calc.Lz = bbox.z2 - bbox.z1;
-  force_calc.K = K;
+  force_calc.G = G;
   force_calc.theta = tree->theta;
   force_calc.branches = octree_new_branch_array(octree, sizeof(agg_t));
-  force_calc.charges = charges;
-  force_calc.forces = forces;
+  force_calc.masses = masses;
   octree_visit(octree, OCTREE_PRE, &force_calc, 
                aggregate_branch, aggregate_leaf);
 
-  // Now compute forces on each of the points. Note that we use a "post" 
+  // We compute forces for all points in our communicator, so let's get 
+  // data from other processes.
+  int nprocs, rank;
+  MPI_Comm_size(tree->comm, &nprocs);
+  MPI_Comm_size(tree->comm, &rank);
+  
+  // How many points on other processes?
+  int Np[nprocs];
+  MPI_Allgather(&N, 1, MPI_INT, 
+                Np, 1, MPI_INT, 
+                tree->comm);
+  int Ntot = 0;
+  for (int p = 0; p < nprocs; ++p)
+    Ntot += Np[p];
+
+  // Get point and mass data from other processes.
+  point_t* all_points = polymec_malloc(sizeof(point_t) * Ntot);
+  MPI_Allgather(points, 3*Ntot, MPI_REAL_T, 
+                all_points, 3*Ntot, MPI_REAL_T, 
+                tree->comm);
+  real_t* all_masses = polymec_malloc(sizeof(real_t) * Ntot);
+  MPI_Allgather(masses, Ntot, MPI_REAL_T, 
+                all_masses, Ntot, MPI_REAL_T, 
+                tree->comm);
+
+  // Now compute forces on all of the points. Note that we use a "post" 
   // traversal for this one, since we need to check whether the branches 
   // are aggregated.
-  for (int i = 0; i < N; ++i)
+  vector_t* all_forces = polymec_malloc(sizeof(vector_t) * Ntot);
+  memset(all_forces, 0, sizeof(vector_t) * Ntot);
+  for (int i = 0; i < Ntot; ++i)
   {
-    force_calc.i = i;
-    force_calc.x = &(points[i]);
+    force_calc.xi = &(all_points[i]);
+    force_calc.mi = all_masses[i];
+    force_calc.Fi = &(all_forces[i]);
     octree_visit(octree, OCTREE_POST, &force_calc, 
                  sum_branch_force, sum_leaf_force);
   }
 
+  // Sum together all forces on all points over all processes.
+  MPI_Allreduce(MPI_IN_PLACE, all_forces, 3*Ntot, 
+                MPI_REAL_T, MPI_SUM, tree->comm);
+
+  // Extract force data for this process.
+  int start = 0;
+  for (int p = 0; p < rank; ++p)
+    start += Np[p];
+  memcpy(forces, &(all_forces[start]), sizeof(vector_t) * N);
+
   // Clean up.
+  polymec_free(all_forces);
+  polymec_free(all_masses);
+  polymec_free(all_points);
   polymec_free(force_calc.branches);
   octree_free(octree);
 }
