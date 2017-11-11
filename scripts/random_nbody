@@ -88,7 +88,7 @@ end
 
 data = n2:data()
 --print(dir(data)) -- produces 'invalid key' error.
-f = io.open('random.py', 'w')
+f = io.open('random_nbody.py', 'w')
 write_array(f, 't', times)
 for i = 1,N do
   x_name = string.format('x_body_%d', i)

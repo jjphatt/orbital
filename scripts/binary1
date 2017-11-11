@@ -16,7 +16,7 @@ b2 = body.new{name = '2',
 
 -- Create our model.
 --n2 = nbody.brute_force{G = 1, bodies = {b1, b2}}
-n2 = nbody.barnes_hut{G = 1, bodies = {b1, b2}}
+n2 = nbody.barnes_hut{G = 1, theta = 0.5, bodies = {b1, b2}}
 
 -- Figure out how long to run, and set the max number of steps.
 T = 2*math.pi
