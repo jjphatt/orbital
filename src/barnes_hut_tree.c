@@ -32,7 +32,6 @@ typedef struct
   real_t total_charge;
   point_t centroid;
   int num_points;
-  bool aggregated; // true if children are aggregated, false otherwise.
 } agg_t;
 
 DEFINE_ARRAY(agg_array, agg_t)
@@ -49,7 +48,7 @@ typedef struct
 } force_calc_t;
 
 // This function aggregates branch data to its parent branch.
-static void aggregate_branch(void* context, int depth, int branch_index, int parent_index)
+static bool aggregate_branch(void* context, int depth, int branch_index, int parent_index)
 {
   force_calc_t* force_calc = context;
 
@@ -61,6 +60,9 @@ static void aggregate_branch(void* context, int depth, int branch_index, int par
   p_agg->centroid.y += b_agg->centroid.y;
   p_agg->centroid.z += b_agg->centroid.z;
   p_agg->num_points += b_agg->num_points;
+
+  // Visit our children.
+  return true;
 }
 
 // This function aggregates the children attached to a branch.
@@ -78,7 +80,7 @@ static void aggregate_leaf(void* context, int index, point_t* point, int parent_
 }
 
 // This function accumulates forces from a branch.
-static void sum_branch_force(void* context, int depth, int branch_index, int parent_index)
+static bool sum_branch_force(void* context, int depth, int branch_index, int parent_index)
 {
   force_calc_t* force_calc = context;
 
@@ -108,9 +110,10 @@ static void sum_branch_force(void* context, int depth, int branch_index, int par
     force_calc->forces[i].x += K * qi * qj * rij.x * r3_inv;
     force_calc->forces[i].y += K * qi * qj * rij.y * r3_inv;
     force_calc->forces[i].z += K * qi * qj * rij.z * r3_inv;
-
-    agg->aggregated = true;
+    return false; // Don't visit our children.
   }
+  else
+    return true; // Visit children.
 }
 
 // This function accumulates forces from a leaf.
@@ -118,25 +121,20 @@ static void sum_leaf_force(void* context, int j, point_t* xj, int parent_index)
 {
   force_calc_t* force_calc = context;
 
-  // This leaf only contributes if its parent branch hasn't been aggregated.
-  agg_t* agg = &(force_calc->branches->data[parent_index]);
-  if (!agg->aggregated)
-  {
-    int i = force_calc->i;
-    if (i == j) return;
+  int i = force_calc->i;
+  if (i == j) return;
 
-    real_t K = force_calc->K;
-    real_t qi = force_calc->charges[i];
-    real_t qj = force_calc->charges[j];
-    point_t* xi = force_calc->x;
-    vector_t rij;
-    point_displacement(xi, xj, &rij);
-    real_t r = vector_mag(&rij);
-    real_t r3_inv = 1.0 / (r*r*r);
-    force_calc->forces[i].x += K * qi * qj * rij.x * r3_inv;
-    force_calc->forces[i].y += K * qi * qj * rij.y * r3_inv;
-    force_calc->forces[i].z += K * qi * qj * rij.z * r3_inv;
-  }
+  real_t K = force_calc->K;
+  real_t qi = force_calc->charges[i];
+  real_t qj = force_calc->charges[j];
+  point_t* xi = force_calc->x;
+  vector_t rij;
+  point_displacement(xi, xj, &rij);
+  real_t r = vector_mag(&rij);
+  real_t r3_inv = 1.0 / (r*r*r);
+  force_calc->forces[i].x += K * qi * qj * rij.x * r3_inv;
+  force_calc->forces[i].y += K * qi * qj * rij.y * r3_inv;
+  force_calc->forces[i].z += K * qi * qj * rij.z * r3_inv;
 }
 
 void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
@@ -151,7 +149,7 @@ void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
   // In the case of a single body, the force is zero.
   if (N == 1)
   {
-    memset(forces, 0, sizeof(vector_t) * N);
+    forces[0].x = forces[0].y = forces[0].z = 0.0;
     return;
   }
 
