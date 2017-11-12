@@ -3,12 +3,6 @@
 
 #include "body.h"
 
-static void body_free(void* ctx)
-{
-  body_t* b = ctx;
-  string_free(b->name);
-}
-
 body_t* body_new(const char* name,
                  real_t m,
                  point_t* x, 
@@ -16,11 +10,17 @@ body_t* body_new(const char* name,
 {
   ASSERT(m > 0.0);
 
-  body_t* b = polymec_gc_malloc(sizeof(body_t), body_free);
+  body_t* b = polymec_malloc(sizeof(body_t));
   b->name = string_dup(name);
   b->m = m;
   b->x = *x;
   b->v = *v;
   return b;
+}
+
+void body_free(body_t* b)
+{
+  string_free(b->name);
+  polymec_free(b);
 }
 

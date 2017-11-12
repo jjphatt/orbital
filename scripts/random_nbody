@@ -12,6 +12,7 @@ m_max = tonumber(options.max_mass) or 100       -- Maximum mass
 v_max = tonumber(options.max_mass) or 100       -- Maximum velocity
 T = tonumber(options.T) or 1                    -- Final time
 max_steps = tonumber(options.max_steps) or 1000 -- Maximum number of steps
+algo = options.algorithm or 'barnes_hut'        -- Algorithm ('barnes_hut' or 'brute_force')
 
 -- First and foremost, we need a random number generator.
 gen = rng.host()
@@ -33,13 +34,18 @@ end
 print(string.format('Generated %d bodies.', N))
 
 -- Create our model.
---nb = nbody.brute_force{G = G, bodies = bodies}
-nb = nbody.barnes_hut{G = G, theta = 0.5, bodies = bodies}
+if algo == 'brute_force' then
+  nb = nbody.brute_force{G = G, bodies = bodies}
+elseif algo == 'barnes_hut' then
+  nb = nbody.barnes_hut{G = G, theta = 0.5, bodies = bodies}
+else
+  error(string.format('Invalid algorithm: %s', algo))
+end
 
 -- Now wire up some probes and set acquisition times.
 times = {}
-for i = 0,T/dt do
-  times[i+1] = i*dt
+for i = 0,T/20 do
+  times[i+1] = i*T/20
 end
 for i = 1,N do
   px = nbody.x_probe(bodies[i].name)
@@ -88,6 +94,7 @@ function write_vector_arrays(file, name, array)
 end
 
 data = nb:data()
+--print(data)
 f = io.open('random_nbody.py', 'w')
 write_array(f, 't', times)
 for i = 1,N do

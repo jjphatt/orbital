@@ -7,7 +7,6 @@
 #include "polymec.h"
 
 // A body floats through 3D space under the influence of gravity.
-// Objects of this type are garbage-collected.
 typedef struct 
 {
   char* name;
@@ -23,6 +22,9 @@ body_t* body_new(const char* name,
                  real_t m,
                  point_t* x, 
                  vector_t* v);
+
+// Destructor.
+void body_free(body_t* b);
 
 DEFINE_ARRAY(body_array, body_t*)
 
