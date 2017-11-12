@@ -164,7 +164,11 @@ static int barnes_hut_accel(void* context, real_t t, real_t* U, real_t* dvdt)
   }
   barnes_hut_tree_compute_forces(nb->tree, nb->G, x, m, N, (vector_t*)dvdt);
   for (int i = 0; i < N; ++i)
-    dvdt[i] /= nb->bodies->data[i]->m;
+  {
+    dvdt[3*i] /= m[i];
+    dvdt[3*i+1] /= m[i];
+    dvdt[3*i+2] /= m[i];
+  }
 
   return 0;
 }

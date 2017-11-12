@@ -143,6 +143,7 @@ void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
                                     int N,
                                     vector_t* forces)
 {
+  START_FUNCTION_TIMER();
   ASSERT(G > 0.0);
 
   // Compute a bounding box that contains all of the local points.
@@ -173,7 +174,7 @@ void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
   // data from other processes.
   int nprocs, rank;
   MPI_Comm_size(tree->comm, &nprocs);
-  MPI_Comm_size(tree->comm, &rank);
+  MPI_Comm_rank(tree->comm, &rank);
   
   // How many points on other processes?
   int Np[nprocs];
@@ -224,5 +225,6 @@ void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
   polymec_free(all_points);
   polymec_free(force_calc.branches);
   octree_free(octree);
+  STOP_FUNCTION_TIMER();
 }
 

@@ -33,7 +33,8 @@ end
 print(string.format('Generated %d bodies.', N))
 
 -- Create our model.
-n2 = nbody.brute_force{G = G, bodies = bodies}
+--n2 = nbody.brute_force{G = G, bodies = bodies}
+n2 = nbody.barnes_hut{G = G, theta = 0.5, bodies = bodies}
 
 -- Now wire up some probes and set acquisition times.
 times = {}

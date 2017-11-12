@@ -3,6 +3,7 @@
 
 -- Options
 dt = options.fixed_dt or 1e-2
+max_steps = tonumber(options.max_steps) or 10000
 
 b1 = body.new{name = '1', 
               m = 4,
@@ -21,8 +22,8 @@ n2 = nbody.barnes_hut{G = 1, theta = 0.5, bodies = {b1, b2}}
 -- Figure out how long to run, and set the max number of steps.
 T = 2*math.pi
 N_steps = 2 * math.floor(T/dt)
-if options.max_steps and (options.max_steps < N_steps) then
-  N_steps = options.max_steps
+if options.max_steps and (max_steps < N_steps) then
+  N_steps = max_steps
 end
 
 -- Now wire up some probes and set acquisition times.
