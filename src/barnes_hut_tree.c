@@ -96,7 +96,7 @@ static bool sum_branch_force(void* context, int depth, int branch_index, int par
   real_t s = L * pow(0.5, depth);
   point_t* xi = force_calc->xi;
   real_t d = point_distance(xi, xj);
-  if (s / d < force_calc->theta)
+  if ((s/d) < force_calc->theta)
   {
     // Yup! We compute the force as though this branch and its children are 
     // one big mass at the center of mass of the branch.
@@ -121,15 +121,13 @@ static void sum_leaf_force(void* context, int j, point_t* xj, int parent_index)
   force_calc_t* force_calc = context;
 
   point_t* xi = force_calc->xi;
-  if (point_distance(xi, xj) < 1e-12)
-    return;
-
   real_t G = force_calc->G;
   real_t mi = force_calc->mi;
   real_t mj = force_calc->masses[j];
   vector_t rij;
   point_displacement(xi, xj, &rij);
   real_t r = vector_mag(&rij);
+  if (r < 1e-12) return; // xi == xj
   real_t r3_inv = 1.0 / (r*r*r);
   force_calc->Fi->x += G * mi * mj * rij.x * r3_inv;
   force_calc->Fi->y += G * mi * mj * rij.y * r3_inv;
@@ -158,7 +156,7 @@ void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
   for (size_t i = 0; i < N; ++i)
     octree_insert(octree, &(points[i]), (int)i);
 
-  // Compute aggregates for points at each branch node of the octree.
+  // Set up a context to keep the books for our octree.
   force_calc_t force_calc;
   force_calc.Lx = bbox.x2 - bbox.x1;
   force_calc.Ly = bbox.y2 - bbox.y1;
@@ -167,6 +165,8 @@ void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
   force_calc.theta = tree->theta;
   force_calc.branches = octree_new_branch_array(octree, sizeof(agg_t));
   force_calc.masses = masses;
+
+  // Compute aggregates for points at each branch node of the octree.
   octree_visit(octree, OCTREE_PRE, &force_calc, 
                aggregate_branch, aggregate_leaf);
 

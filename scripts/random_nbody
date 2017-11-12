@@ -2,16 +2,16 @@
 -- attracted to one another.
 
 -- Options.
-N = options.N or 10                   -- Number of bodies
-L = options.L or 1                    -- Length on a side of a cubic bounding box
-seed = options.seed or 123456         -- Random number generator seed
-dt = options.fixed_dt or 1e-2         -- Fixed timestep
-G = options.G or constants.G          -- Gravitational constant
-m_min = options.m_min or 1            -- Minimum mass
-m_max = options.max_mass or 100       -- Maximum mass
-v_max = options.max_mass or 100       -- Maximum velocity
-T = options.T or 1                    -- Final time
-max_steps = options.max_steps or 1000 -- Maximum number of steps
+N = tonumber(options.N) or 10                   -- Number of bodies
+L = tonumber(options.L) or 1                    -- Length on a side of a cubic bounding box
+seed = tonumber(options.seed) or 123456         -- Random number generator seed
+dt = tonumber(options.fixed_dt) or 1e-2         -- Fixed timestep
+G = tonumber(options.G) or constants.G          -- Gravitational constant
+m_min = tonumber(options.m_min) or 1            -- Minimum mass
+m_max = tonumber(options.max_mass) or 100       -- Maximum mass
+v_max = tonumber(options.max_mass) or 100       -- Maximum velocity
+T = tonumber(options.T) or 1                    -- Final time
+max_steps = tonumber(options.max_steps) or 1000 -- Maximum number of steps
 
 -- First and foremost, we need a random number generator.
 gen = rng.host()
@@ -33,8 +33,8 @@ end
 print(string.format('Generated %d bodies.', N))
 
 -- Create our model.
---n2 = nbody.brute_force{G = G, bodies = bodies}
-n2 = nbody.barnes_hut{G = G, theta = 0.5, bodies = bodies}
+--nb = nbody.brute_force{G = G, bodies = bodies}
+nb = nbody.barnes_hut{G = G, theta = 0.5, bodies = bodies}
 
 -- Now wire up some probes and set acquisition times.
 times = {}
@@ -43,16 +43,16 @@ for i = 0,T/dt do
 end
 for i = 1,N do
   px = nbody.x_probe(bodies[i].name)
-  n2:add_probe(px, times)
+  nb:add_probe(px, times)
   pv = nbody.v_probe(bodies[i].name)
-  n2:add_probe(pv, times)
+  nb:add_probe(pv, times)
 end
 pE = nbody.E_probe()
-n2:add_probe(pE, times)
+nb:add_probe(pE, times)
 
 -- Run the thing.
 print('Running...')
-n2:run{t1 = 0, 
+nb:run{t1 = 0, 
        t2 = T,
        max_steps = max_steps,
        max_dt = dt}
@@ -87,8 +87,7 @@ function write_vector_arrays(file, name, array)
   file:write(']\n')
 end
 
-data = n2:data()
---print(dir(data)) -- produces 'invalid key' error.
+data = nb:data()
 f = io.open('random_nbody.py', 'w')
 write_array(f, 't', times)
 for i = 1,N do
@@ -98,5 +97,4 @@ for i = 1,N do
   write_vector_arrays(f, v_name, data[v_name].values)
 end
 write_array(f, 'E', data['E'].values)
-
 f:close()
