@@ -50,16 +50,18 @@ typedef struct
 // This function aggregates branch data to its parent branch.
 static bool aggregate_branch(void* context, int depth, int branch_index, int parent_index)
 {
-  force_calc_t* force_calc = context;
-
   // Aggregate this branch to its parent.
-  agg_t* b_agg = &(force_calc->branches[branch_index]);
-  agg_t* p_agg = &(force_calc->branches[parent_index]);
-  p_agg->total_mass += b_agg->total_mass;
-  p_agg->center_of_mass.x += b_agg->center_of_mass.x;
-  p_agg->center_of_mass.y += b_agg->center_of_mass.y;
-  p_agg->center_of_mass.z += b_agg->center_of_mass.z;
-  p_agg->num_points += b_agg->num_points;
+  if (parent_index != -1)
+  {
+    force_calc_t* force_calc = context;
+    agg_t* b_agg = &(force_calc->branches[branch_index]);
+    agg_t* p_agg = &(force_calc->branches[parent_index]);
+    p_agg->total_mass += b_agg->total_mass;
+    p_agg->center_of_mass.x += b_agg->center_of_mass.x;
+    p_agg->center_of_mass.y += b_agg->center_of_mass.y;
+    p_agg->center_of_mass.z += b_agg->center_of_mass.z;
+    p_agg->num_points += b_agg->num_points;
+  }
 
   // Visit our children.
   return true;
@@ -85,7 +87,7 @@ static bool sum_branch_force(void* context, int depth, int branch_index, int par
   force_calc_t* force_calc = context;
 
   // Divide our CM by the number of leaves beneath this branch.
-  agg_t* agg = &(force_calc->branches[parent_index]);
+  agg_t* agg = &(force_calc->branches[branch_index]);
   point_t* xj = &(agg->center_of_mass);
   xj->x /= agg->num_points;
   xj->y /= agg->num_points;
