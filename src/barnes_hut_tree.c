@@ -50,6 +50,7 @@ typedef struct
 // This function aggregates branch data to its parent branch.
 static bool aggregate_branch(void* context, int depth, int branch_index, int parent_index)
 {
+  START_FUNCTION_TIMER();
   // Aggregate this branch to its parent.
   if (parent_index != -1)
   {
@@ -64,12 +65,14 @@ static bool aggregate_branch(void* context, int depth, int branch_index, int par
   }
 
   // Visit our children.
+  STOP_FUNCTION_TIMER();
   return true;
 }
 
 // This function aggregates the children attached to a branch.
 static void aggregate_leaf(void* context, int index, point_t* point, int parent_index)
 {
+  START_FUNCTION_TIMER();
   force_calc_t* force_calc = context;
 
   // Aggregate this point.
@@ -79,6 +82,7 @@ static void aggregate_leaf(void* context, int index, point_t* point, int parent_
   agg->center_of_mass.y += point->y;
   agg->center_of_mass.z += point->z;
   ++(agg->num_points);
+  STOP_FUNCTION_TIMER();
 }
 
 // This function accumulates forces from a branch.
@@ -129,11 +133,13 @@ static void sum_leaf_force(void* context, int j, point_t* xj, int parent_index)
   vector_t rij;
   point_displacement(xi, xj, &rij);
   real_t r = vector_mag(&rij);
-  if (r < 1e-12) return; // xi == xj
-  real_t r3_inv = 1.0 / (r*r*r);
-  force_calc->Fi->x += G * mi * mj * rij.x * r3_inv;
-  force_calc->Fi->y += G * mi * mj * rij.y * r3_inv;
-  force_calc->Fi->z += G * mi * mj * rij.z * r3_inv;
+  if (r > 1e-12) // xi != xj
+  {
+    real_t r3_inv = 1.0 / (r*r*r);
+    force_calc->Fi->x += G * mi * mj * rij.x * r3_inv;
+    force_calc->Fi->y += G * mi * mj * rij.y * r3_inv;
+    force_calc->Fi->z += G * mi * mj * rij.z * r3_inv;
+  }
 }
 
 void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
