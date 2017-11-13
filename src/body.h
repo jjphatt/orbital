@@ -17,14 +17,11 @@ typedef struct
 } body_t;
 
 // Creates a new body with a descriptive name, a mass m, a position x, 
-// and a velocity v.
+// and a velocity v. Objects of this type are garbage collected.
 body_t* body_new(const char* name,
                  real_t m,
                  point_t* x, 
                  vector_t* v);
-
-// Destructor.
-void body_free(body_t* b);
 
 DEFINE_ARRAY(body_array, body_t*)
 

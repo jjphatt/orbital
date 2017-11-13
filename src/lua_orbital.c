@@ -109,7 +109,7 @@ static void get_nbody_args(lua_State* L, real_t* G, body_array_t** bodies)
       if (!lua_is_body(L, -1))
         luaL_error(L, "Item %d in bodies is not a body.", i);
       body_t* b = lua_to_body(L, -1);
-      body_array_append_with_dtor(*bodies, b, body_free);
+      body_array_append(*bodies, b);
       lua_pop(L, 1);
       ++i;
     }
