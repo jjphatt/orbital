@@ -3,7 +3,7 @@
 
 -- Options.
 N = tonumber(options.N) or 10                   -- Number of bodies
-L = tonumber(options.L) or 1                    -- Length on a side of a cubic bounding box
+L = tonumber(options.L) or 10                   -- Length on a side of a cubic bounding box
 seed = tonumber(options.seed) or 123456         -- Random number generator seed
 dt = tonumber(options.fixed_dt) or 1e-2         -- Fixed timestep
 G = tonumber(options.G) or constants.G          -- Gravitational constant
@@ -31,7 +31,7 @@ for i = 1,N do
                        x = point.random(gen, box),
                        v = vector.random(gen, v_max * gen:uniform())}
 end
-print(string.format('Generated %d bodies.', N))
+print(string.format('Generated %d bodies in %s.', N, box))
 
 -- Create our model.
 if algo == 'brute_force' then

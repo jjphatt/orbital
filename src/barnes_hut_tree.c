@@ -45,6 +45,9 @@ typedef struct
   real_t mi;
   point_t* xi;
   vector_t* Fi; 
+
+  // Performance / diagnostics.
+  int num_force_evals;
 } force_calc_t;
 
 // This function aggregates branch data to its parent branch.
@@ -89,9 +92,13 @@ static void aggregate_leaf(void* context, int index, point_t* point, int parent_
 static bool sum_branch_force(void* context, int depth, int branch_index, int parent_index)
 {
   force_calc_t* force_calc = context;
+  agg_t* agg = &(force_calc->branches[branch_index]);
+
+  // If we have no points beneath us, we have nothing to do here.
+  if (agg->num_points == 0)
+    return false;
 
   // Divide our CM by the number of leaves beneath this branch.
-  agg_t* agg = &(force_calc->branches[branch_index]);
   point_t* xj = &(agg->center_of_mass);
   xj->x /= agg->num_points;
   xj->y /= agg->num_points;
@@ -115,6 +122,7 @@ static bool sum_branch_force(void* context, int depth, int branch_index, int par
     force_calc->Fi->x += G * mi * mj * rij.x * r3_inv;
     force_calc->Fi->y += G * mi * mj * rij.y * r3_inv;
     force_calc->Fi->z += G * mi * mj * rij.z * r3_inv;
+    ++(force_calc->num_force_evals);
     return false; // Don't visit our children.
   }
   else
@@ -140,6 +148,7 @@ static void sum_leaf_force(void* context, int j, point_t* xj, int parent_index)
     force_calc->Fi->y += G * mi * mj * rij.y * r3_inv;
     force_calc->Fi->z += G * mi * mj * rij.z * r3_inv;
   }
+  ++(force_calc->num_force_evals);
 }
 
 void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
@@ -173,6 +182,7 @@ void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
   force_calc.theta = tree->theta;
   force_calc.branches = octree_new_branch_array(octree, sizeof(agg_t));
   force_calc.masses = masses;
+  force_calc.num_force_evals = 0;
 
   // Compute aggregates for points at each branch node of the octree.
   octree_visit(octree, OCTREE_PRE, &force_calc, 
@@ -216,6 +226,8 @@ void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
     octree_visit(octree, OCTREE_POST, &force_calc, 
                  sum_branch_force, sum_leaf_force);
   }
+  log_detail("barnes_hut_tree: theta = %g => %d force evaluations.", 
+             tree->theta, force_calc.num_force_evals);
 
   // Sum together all forces on all points over all processes.
   MPI_Allreduce(MPI_IN_PLACE, all_forces, 3*Ntot, 
