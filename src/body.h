@@ -23,6 +23,9 @@ body_t* body_new(const char* name,
                  point_t* x, 
                  vector_t* v);
 
+// Creates a deep copy of the body b.
+body_t* body_clone(body_t* b);
+
 DEFINE_ARRAY(body_array, body_t*)
 
 #endif

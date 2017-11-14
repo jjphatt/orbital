@@ -7,7 +7,14 @@
 
 typedef struct
 {
+  // Parallel stuff.
+  MPI_Comm comm;
+  int rank, nprocs;
+
+  // Gravitational coupling constant.
   real_t G;
+
+  // Initial data.
   body_array_t* bodies;
 
   // Barnes-Hut algorithm stuff.
@@ -16,7 +23,7 @@ typedef struct
   // Time integrator
   ode_solver_t* solver;
 
-  // Solution data
+  // Solution data.
   real_t* U;
   real_t v_min, a_max;
   real_t E0; // initial energy.
@@ -46,12 +53,15 @@ static real_t nbody_total_energy(nbody_t* nb)
       E += G * m1 * m2 / r2;
     }
   }
+  MPI_Allreduce(MPI_IN_PLACE, &E, 1, MPI_REAL_T, MPI_SUM, nb->comm);
   return E;
 }
 
 static void nbody_init(void* context, real_t t)
 {
   nbody_t* nb = context;
+
+  // Populate the solution vector.
   nb->v_min = REAL_MAX;
   for (size_t b = 0; b < nb->bodies->size; ++b)
   {
@@ -118,34 +128,74 @@ static int brute_force_accel(void* context, real_t t, real_t* U, real_t* dvdt)
   real_t G = nb->G;
   nb->a_max = 0.0;
   nb->v_min = REAL_MAX;
+
+  // Extract point coordinates and masses from solution data.
   int N = (int)(nb->bodies->size);
-  for (size_t i = 0; i < N; ++i)
+  point_t x[N];
+  real_t m[N];
+  for (int i = 0; i < N; ++i)
   {
-    point_t x1 = {.x = U[6*i], .y = U[6*i+1], .z = U[6*i+2]};
-    vector_t v1 = {.x = U[6*i+3], .y = U[6*i+4], .z = U[6*i+5]};
+    x[i].x = U[6*i];
+    x[i].y = U[6*i+1];
+    x[i].z = U[6*i+2];
+    m[i] = nb->bodies->data[i]->m;
+  }
+
+  // How many points on other processes?
+  int Np[nb->nprocs];
+  MPI_Allgather(&N, 1, MPI_INT, 
+                Np, 1, MPI_INT, 
+                nb->comm);
+  int Ntot = 0;
+  for (int p = 0; p < nb->nprocs; ++p)
+    Ntot += Np[p];
+
+  // Get point data from other processes.
+  point_t* all_points = polymec_malloc(sizeof(point_t) * Ntot);
+  MPI_Allgather(x, 3*Ntot, MPI_REAL_T, 
+                all_points, 3*Ntot, MPI_REAL_T, 
+                nb->comm);
+
+  // Now compute forces on all pairs, with i ranging over the entirety of 
+  // the points, and j over just the local ones.
+  vector_t* all_accels = polymec_malloc(sizeof(vector_t) * Ntot);
+  memset(all_accels, 0, sizeof(vector_t) * Ntot);
+  for (size_t i = 0; i < Ntot; ++i)
+  {
+    point_t xi = all_points[i];
     vector_t a = {.x = 0.0, .y = 0.0, .z = 0.0};
     for (size_t j = 0; j < N; ++j)
     {
       if (i == j) continue;
-      real_t m2 = nb->bodies->data[j]->m;
-      point_t x2 = {.x = U[6*j], .y = U[6*j+1], .z = U[6*j+2]};
-      vector_t r12;
-      point_displacement(&x1, &x2, &r12);
-      real_t r = vector_mag(&r12);
+      real_t mj = m[j];
+      point_t xj = x[j];
+      vector_t rij;
+      point_displacement(&xi, &xj, &rij);
+      real_t r = vector_mag(&rij);
       real_t r3_inv = 1.0 / (r*r*r);
-      a.x += G * m2 * r12.x * r3_inv;
-      a.y += G * m2 * r12.y * r3_inv;
-      a.z += G * m2 * r12.z * r3_inv;
+      a.x += G * mj * rij.x * r3_inv;
+      a.y += G * mj * rij.y * r3_inv;
+      a.z += G * mj * rij.z * r3_inv;
     }
-    nb->a_max = MAX(nb->a_max, vector_mag(&a));
-    nb->v_min = MIN(nb->v_min, vector_mag(&v1));
 
     // Update the acceleration.
-    dvdt[3*i]   = a.x;
-    dvdt[3*i+1] = a.y;
-    dvdt[3*i+2] = a.z;
+    all_accels[i] = a;
   }
-//  log_debug("a_max = %g\n", nb->a_max);
+
+  // Sum together all accelerations on all points over all processes.
+  MPI_Allreduce(MPI_IN_PLACE, all_accels, 3*Ntot, 
+                MPI_REAL_T, MPI_SUM, nb->comm);
+
+  // Extract acceleration data for this process.
+  int start = 0;
+  for (int p = 0; p < nb->rank; ++p)
+    start += Np[p];
+  memcpy(dvdt, &(all_accels[start]), sizeof(vector_t) * N);
+
+  // Clean up.
+  polymec_free(all_accels);
+  polymec_free(all_points);
+
   return 0;
 }
 
@@ -173,6 +223,36 @@ static int barnes_hut_accel(void* context, real_t t, real_t* U, real_t* dvdt)
   return 0;
 }
 
+static body_array_t* partition_bodies(nbody_t* nb, body_array_t* bodies)
+{
+  START_FUNCTION_TIMER();
+
+  int N = (int)(bodies->size);
+
+  // Partition the bodies and their data. Since each process has all of the 
+  // data, we just compute a partition vector.
+  point_cloud_t* cloud = point_cloud_new(nb->comm, N);
+  for (int b = 0; b < N; ++b)
+    cloud->points[b] = bodies->data[b]->x;
+  int64_t* P = partition_vector_from_point_cloud(cloud, nb->comm, NULL, 1.05);
+
+  // Use the partition vector to cull the off-process bodies.
+  body_array_t* local_bodies = body_array_new();
+  for (int i = 0; i < N; ++i)
+  {
+    if (P[i] == nb->rank)
+      body_array_append(local_bodies, body_clone(bodies->data[i]));
+  }
+  nb->bodies = local_bodies;
+
+  // Clean up.
+  polymec_free(P);
+  point_cloud_free(cloud);
+
+  STOP_FUNCTION_TIMER();
+  return local_bodies;
+}
+
 //------------------------------------------------------------------------
 
 model_t* brute_force_nbody_new(real_t G,
@@ -181,14 +261,19 @@ model_t* brute_force_nbody_new(real_t G,
   ASSERT(G >= 0.0);
 
   nbody_t* nb = polymec_malloc(sizeof(nbody_t));
+  nb->comm = MPI_COMM_WORLD;
+  MPI_Comm_rank(nb->comm, &(nb->rank));
+  MPI_Comm_size(nb->comm, &(nb->nprocs));
   nb->G = G;
-  nb->bodies = bodies;
+  nb->bodies = partition_bodies(nb, bodies);
   nb->tree = NULL;
-
   nb->U = polymec_malloc(sizeof(real_t) * 6 * bodies->size);
 
+  // Dispose of the original global list of bodies.
+  body_array_free(bodies);
+
   // Set up a Verlet solver.
-  nb->solver = verlet_ode_solver_new(MPI_COMM_SELF, (int)bodies->size,
+  nb->solver = verlet_ode_solver_new(nb->comm, (int)nb->bodies->size,
                                      nb, brute_force_accel, NULL);
 
   // Now create the model.
@@ -208,15 +293,19 @@ model_t* barnes_hut_nbody_new(real_t G,
   ASSERT(theta >= 0.0);
 
   nbody_t* nb = polymec_malloc(sizeof(nbody_t));
+  nb->comm = MPI_COMM_WORLD;
+  MPI_Comm_rank(nb->comm, &(nb->rank));
+  MPI_Comm_size(nb->comm, &(nb->nprocs));
   nb->G = G;
-  nb->bodies = bodies;
-  nb->tree = barnes_hut_tree_new(MPI_COMM_WORLD, 
-                                 theta);
-  
+  nb->bodies = partition_bodies(nb, bodies);
+  nb->tree = barnes_hut_tree_new(nb->comm, theta);
   nb->U = polymec_malloc(sizeof(real_t) * 6 * bodies->size);
 
+  // Dispose of the original global list of bodies.
+  body_array_free(bodies);
+
   // Set up a Verlet solver.
-  nb->solver = verlet_ode_solver_new(MPI_COMM_WORLD, (int)bodies->size,
+  nb->solver = verlet_ode_solver_new(nb->comm, (int)nb->bodies->size,
                                      nb, barnes_hut_accel, NULL);
 
   // Now create the model.

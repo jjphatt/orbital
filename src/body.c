@@ -24,3 +24,8 @@ body_t* body_new(const char* name,
   return b;
 }
 
+body_t* body_clone(body_t* b)
+{
+  return body_new(b->name, b->m, &(b->x), &(b->v)); 
+}
+
