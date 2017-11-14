@@ -152,7 +152,7 @@ static int brute_force_accel(void* context, real_t t, real_t* U, real_t* dvdt)
 
   // Get point data from other processes.
   point_t* all_points = polymec_malloc(sizeof(point_t) * Ntot);
-  MPI_Allgather(x, 3*Ntot, MPI_REAL_T, 
+  MPI_Allgather(x, 3*N, MPI_REAL_T, 
                 all_points, 3*Ntot, MPI_REAL_T, 
                 nb->comm);
 
@@ -234,7 +234,7 @@ static body_array_t* partition_bodies(nbody_t* nb, body_array_t* bodies)
   point_cloud_t* cloud = point_cloud_new(nb->comm, N);
   for (int b = 0; b < N; ++b)
     cloud->points[b] = bodies->data[b]->x;
-  int64_t* P = partition_vector_from_point_cloud(cloud, nb->comm, NULL, 1.05);
+  int64_t* P = partition_vector_from_point_cloud(cloud, nb->comm, NULL, 1.05, true);
 
   // Use the partition vector to cull the off-process bodies.
   body_array_t* local_bodies = body_array_new();

@@ -205,12 +205,12 @@ void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
 
   // Get point and mass data from other processes.
   point_t* all_points = polymec_malloc(sizeof(point_t) * Ntot);
-  MPI_Allgather(points, 3*Ntot, MPI_REAL_T, 
-                all_points, 3*Ntot, MPI_REAL_T, 
+  MPI_Allgather(points, 3*N, MPI_REAL_T, 
+                all_points, 3*N, MPI_REAL_T, 
                 tree->comm);
   real_t* all_masses = polymec_malloc(sizeof(real_t) * Ntot);
-  MPI_Allgather(masses, Ntot, MPI_REAL_T, 
-                all_masses, Ntot, MPI_REAL_T, 
+  MPI_Allgather(masses, N, MPI_REAL_T, 
+                all_masses, N, MPI_REAL_T, 
                 tree->comm);
 
   // Now compute forces on all of the points. Note that we use a "post" 
