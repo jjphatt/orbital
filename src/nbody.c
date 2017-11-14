@@ -141,6 +141,7 @@ static int brute_force_accel(void* context, real_t t, real_t* U, real_t* dvdt)
     m[i] = nb->bodies->data[i]->m;
   }
 
+
   // How many points on other processes?
   int Np[nb->nprocs];
   MPI_Allgather(&N, 1, MPI_INT, 
@@ -153,7 +154,7 @@ static int brute_force_accel(void* context, real_t t, real_t* U, real_t* dvdt)
   // Get point data from other processes.
   point_t* all_points = polymec_malloc(sizeof(point_t) * Ntot);
   MPI_Allgather(x, 3*N, MPI_REAL_T, 
-                all_points, 3*Ntot, MPI_REAL_T, 
+                all_points, 3*N, MPI_REAL_T, 
                 nb->comm);
 
   // Now compute forces on all pairs, with i ranging over the entirety of 
@@ -282,7 +283,7 @@ model_t* brute_force_nbody_new(real_t G,
                          .advance = nbody_advance,
                          .finalize = nbody_finalize,
                          .dtor = nbody_dtor};
-  return model_new("Brute-Force N-body", nb, vtable, MODEL_SERIAL);
+  return model_new("Brute-Force N-body", nb, vtable, MODEL_MPI);
 }
 
 model_t* barnes_hut_nbody_new(real_t G,
