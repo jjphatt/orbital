@@ -247,7 +247,7 @@ int lua_register_orbital_modules(lua_State* L)
   lua_register_core_modules(L);
   lua_register_model_modules(L);
 
-  lua_register_record_type(L, "body", "A body in 3D space.", body_functions, body_fields, body_mm);
+  lua_register_record_type(L, "body", "A body in 3D space.", body_functions, body_fields, body_mm, NULL);
 
   lua_register_nbody(L);
   lua_register_constants(L);
@@ -256,7 +256,7 @@ int lua_register_orbital_modules(lua_State* L)
 
 void lua_push_body(lua_State* L, body_t* body)
 {
-  lua_push_record(L, "body", body, NULL);
+  lua_push_record(L, "body", body);
 }
 
 bool lua_is_body(lua_State* L, int index)
