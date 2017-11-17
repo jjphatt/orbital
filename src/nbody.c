@@ -324,7 +324,7 @@ typedef struct
 {
   char* body_name;
   nbody_t* model;
-  size_t body_index;
+  int body_index, body_rank;
 } nbody_probe_t;
 
 static void nbody_probe_set_model(void* context, void* model_context)
@@ -337,33 +337,40 @@ static void nbody_probe_set_model(void* context, void* model_context)
     for (size_t b = 0; b < m->bodies->size; ++b)
     {
       if (strcmp(p->body_name, m->bodies->data[b]->name) == 0)
-        p->body_index = b;
+        p->body_index = (int)b;
     }
   }
+
+  // Find the rank on which the body lives.
+  int val_and_rank[2] = {p->body_index, m->rank};
+  MPI_Allreduce(MPI_IN_PLACE, val_and_rank, 1, MPI_2INT, MPI_MAXLOC, m->comm);
+  p->body_rank = val_and_rank[1];
 }
 
 static void nbody_probe_acquire_x(void* context, real_t t, probe_data_t* data)
 {
   nbody_probe_t* p = context;
+  nbody_t* m = p->model;
   if (p->body_index != -1)
   {
-    nbody_t* m = p->model;
     data->data[0] = m->U[6*p->body_index];
     data->data[1] = m->U[6*p->body_index+1];
     data->data[2] = m->U[6*p->body_index+2];
   }
+  MPI_Bcast(data->data, 3, MPI_REAL_T, p->body_rank, m->comm);
 }
 
 static void nbody_probe_acquire_v(void* context, real_t t, probe_data_t* data)
 {
   nbody_probe_t* p = context;
+  nbody_t* m = p->model;
   if (p->body_index != -1)
   {
-    nbody_t* m = p->model;
     data->data[0] = m->U[6*p->body_index+3];
     data->data[1] = m->U[6*p->body_index+4];
     data->data[2] = m->U[6*p->body_index+5];
   }
+  MPI_Bcast(data->data, 3, MPI_REAL_T, p->body_rank, m->comm);
 }
 
 static void nbody_probe_acquire_E(void* context, real_t t, probe_data_t* data)
