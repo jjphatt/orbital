@@ -20,7 +20,8 @@ typedef struct
   // Barnes-Hut algorithm stuff.
   barnes_hut_tree_t* tree;
 
-  // Time integrator
+  // Time integrator stuff.
+  int (*accel)(void* context, real_t t, real_t* U, real_t* dvdt);
   ode_solver_t* solver;
 
   // Solution data.
@@ -61,7 +62,10 @@ static void nbody_init(void* context, real_t t)
 {
   nbody_t* nb = context;
 
-  // Populate the solution vector.
+  // Create and populate the solution vector.
+  if (nb->U != NULL)
+    polymec_free(nb->U);
+  nb->U = polymec_malloc(sizeof(real_t) * 6 * nb->bodies->size);
   nb->v_min = REAL_MAX;
   for (size_t b = 0; b < nb->bodies->size; ++b)
   {
@@ -77,6 +81,12 @@ static void nbody_init(void* context, real_t t)
 
   // Compute the initial energy of the system.
   nb->E0 = nbody_total_energy(nb);
+
+  // Set up a Verlet solver.
+  if (nb->solver != NULL)
+    ode_solver_free(nb->solver);
+  nb->solver = verlet_ode_solver_new(nb->comm, (int)nb->bodies->size,
+                                     nb, nb->accel, NULL);
 }
 
 static real_t nbody_max_dt(void* context, real_t t, char* reason)
@@ -261,6 +271,12 @@ static bool nbody_load(void* context,
   polymec_free(masses);
   string_free(all_names);
 
+  // Set up a Verlet solver.
+  if (nb->solver != NULL)
+    ode_solver_free(nb->solver);
+  nb->solver = verlet_ode_solver_new(nb->comm, (int)nb->bodies->size,
+                                     nb, nb->accel, NULL);
+
   STOP_FUNCTION_TIMER();
   return true;
 }
@@ -268,12 +284,50 @@ static bool nbody_load(void* context,
 static void nbody_dtor(void* context)
 {
   nbody_t* nb = context;
-  body_array_free(nb->bodies);
-  polymec_free(nb->U);
-  ode_solver_free(nb->solver);
+  if (nb->bodies != NULL)
+    body_array_free(nb->bodies);
+  if (nb->U != NULL)
+    polymec_free(nb->U);
+  if (nb->solver != NULL)
+    ode_solver_free(nb->solver);
   if (nb->tree != NULL)
     barnes_hut_tree_free(nb->tree);
   polymec_free(nb);
+}
+
+static body_array_t* partition_bodies(nbody_t* nb, body_array_t* bodies)
+{
+  START_FUNCTION_TIMER();
+
+  int N = (int)(bodies->size);
+  if (N == 0)
+  {
+    STOP_FUNCTION_TIMER();
+    return body_array_new();
+  }
+
+  // Partition the bodies and their data. Since each process has all of the 
+  // data, we just compute a partition vector.
+  point_cloud_t* cloud = point_cloud_new(nb->comm, N);
+  for (int b = 0; b < N; ++b)
+    cloud->points[b] = bodies->data[b]->x;
+  int64_t* P = partition_vector_from_point_cloud(cloud, nb->comm, NULL, 1.05, true);
+
+  // Use the partition vector to cull the off-process bodies.
+  body_array_t* local_bodies = body_array_new();
+  for (int i = 0; i < N; ++i)
+  {
+    if (P[i] == nb->rank)
+      body_array_append(local_bodies, body_clone(bodies->data[i]));
+  }
+  nb->bodies = local_bodies;
+
+  // Clean up.
+  polymec_free(P);
+  point_cloud_free(cloud);
+
+  STOP_FUNCTION_TIMER();
+  return local_bodies;
 }
 
 // Solver functions.
@@ -379,36 +433,6 @@ static int barnes_hut_accel(void* context, real_t t, real_t* U, real_t* dvdt)
   return 0;
 }
 
-static body_array_t* partition_bodies(nbody_t* nb, body_array_t* bodies)
-{
-  START_FUNCTION_TIMER();
-
-  int N = (int)(bodies->size);
-
-  // Partition the bodies and their data. Since each process has all of the 
-  // data, we just compute a partition vector.
-  point_cloud_t* cloud = point_cloud_new(nb->comm, N);
-  for (int b = 0; b < N; ++b)
-    cloud->points[b] = bodies->data[b]->x;
-  int64_t* P = partition_vector_from_point_cloud(cloud, nb->comm, NULL, 1.05, true);
-
-  // Use the partition vector to cull the off-process bodies.
-  body_array_t* local_bodies = body_array_new();
-  for (int i = 0; i < N; ++i)
-  {
-    if (P[i] == nb->rank)
-      body_array_append(local_bodies, body_clone(bodies->data[i]));
-  }
-  nb->bodies = local_bodies;
-
-  // Clean up.
-  polymec_free(P);
-  point_cloud_free(cloud);
-
-  STOP_FUNCTION_TIMER();
-  return local_bodies;
-}
-
 //------------------------------------------------------------------------
 
 model_t* brute_force_nbody_new(real_t G,
@@ -423,14 +447,12 @@ model_t* brute_force_nbody_new(real_t G,
   nb->G = G;
   nb->bodies = partition_bodies(nb, bodies);
   nb->tree = NULL;
-  nb->U = polymec_malloc(sizeof(real_t) * 6 * bodies->size);
+  nb->U = NULL;
+  nb->solver = NULL;
+  nb->accel = brute_force_accel;
 
   // Dispose of the original global list of bodies.
   body_array_free(bodies);
-
-  // Set up a Verlet solver.
-  nb->solver = verlet_ode_solver_new(nb->comm, (int)nb->bodies->size,
-                                     nb, brute_force_accel, NULL);
 
   // Now create the model.
   model_vtable vtable = {.init = nbody_init,
@@ -455,14 +477,12 @@ model_t* barnes_hut_nbody_new(real_t G,
   nb->G = G;
   nb->bodies = partition_bodies(nb, bodies);
   nb->tree = barnes_hut_tree_new(nb->comm, theta);
-  nb->U = polymec_malloc(sizeof(real_t) * 6 * bodies->size);
+  nb->U = NULL;
+  nb->solver = NULL;
+  nb->accel = barnes_hut_accel;
 
   // Dispose of the original global list of bodies.
   body_array_free(bodies);
-
-  // Set up a Verlet solver.
-  nb->solver = verlet_ode_solver_new(nb->comm, (int)nb->bodies->size,
-                                     nb, barnes_hut_accel, NULL);
 
   // Now create the model.
   model_vtable vtable = {.init = nbody_init,

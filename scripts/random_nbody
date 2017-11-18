@@ -10,7 +10,7 @@ G = tonumber(options.G) or constants.G           -- Gravitational constant
 m_min = tonumber(options.m_min) or 1             -- Minimum mass
 m_max = tonumber(options.max_mass) or 100        -- Maximum mass
 v_max = tonumber(options.max_mass) or 100        -- Maximum velocity
-T = tonumber(options.T) or 1                     -- Final time
+t2 = tonumber(options.T) or 1                    -- Final time
 max_steps = tonumber(options.max_steps) or 1000  -- Maximum number of steps
 algo = options.algorithm or 'barnes_hut'         -- Algorithm ('barnes_hut' or 'brute_force')
 plot_every = tonumber(options.plot_every) or 0.1 -- Plot interval
@@ -28,13 +28,16 @@ box = bbox.new{x1 = 0, x2 = L,
 
 -- Generate N bodies with random masses, positions, velocities.
 bodies = {}
-for i = 1,N do
-  bodies[i] = body.new{name = string.format('body_%d', i),
-                       m = math.max(m_min, m_max * gen:uniform()),
-                       x = point.random(gen, box),
-                       v = vector.random(gen, v_max * gen:uniform())}
+if not load_step then
+  t1 = 0
+  for i = 1,N do
+    bodies[i] = body.new{name = string.format('body_%d', i),
+                         m = math.max(m_min, m_max * gen:uniform()),
+                         x = point.random(gen, box),
+                         v = vector.random(gen, v_max * gen:uniform())}
+  end
+  print(string.format('Generated %d bodies in %s.', N, box))
 end
-print(string.format('Generated %d bodies in %s.', N, box))
 
 -- Create our model.
 if algo == 'brute_force' then
@@ -47,7 +50,7 @@ end
 
 -- If we're running a smallish simulation (N <= 100), wire up some probes and 
 -- set acquisition times.
-if N < 100 then
+if N < 100 and not load_step then
   times = {}
   for i = 0,T/20 do
     times[i+1] = i*T/20
@@ -64,8 +67,8 @@ end
 
 -- Run the thing.
 print('Running...')
-nb:run{t1 = 0, 
-       t2 = T,
+nb:run{t1 = t1, 
+       t2 = t2,
        max_steps = max_steps,
        max_dt = dt,
        directory = 'random_nbody',
@@ -103,7 +106,7 @@ function write_vector_arrays(file, name, array)
   file:write(']\n')
 end
 
-if (N <= 100) then
+if (N <= 100 and not load_step) then
   data = nb:data()
   f = io.open('random_nbody.py', 'w')
   write_array(f, 't', times)
