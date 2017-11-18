@@ -110,6 +110,151 @@ static void nbody_finalize(void* context, int step, real_t t)
   log_detail("Fractional energy change: %g", (E - nb->E0) / nb->E0 - 1.0);
 }
 
+static void nbody_plot(void* context, 
+                       const char* file_prefix, 
+                       const char* directory, 
+                       real_t time, 
+                       int step)
+{
+  START_FUNCTION_TIMER();
+
+  nbody_t* nb = context;
+
+  // Open a SILO viz file.
+  silo_file_t* silo = silo_file_new(nb->comm, file_prefix, directory, 
+                                    1, 0, step, time);
+
+  // Write a point cloud to the file.
+  int N = (int)(nb->bodies->size);
+  point_cloud_t* cloud = point_cloud_new(nb->comm, N);
+  for (int b = 0; b < N; ++b)
+    cloud->points[b] = nb->bodies->data[b]->x;
+  silo_file_write_point_cloud(silo, "bodies", cloud);
+
+  // Write the masses and velocities.
+  real_t* masses = polymec_malloc(sizeof(real_t) * N);
+  vector_t* velocities = polymec_malloc(sizeof(vector_t) * N);
+  for (int b = 0; b < N; ++b)
+  {
+    masses[b] = nb->bodies->data[b]->m;
+    velocities[b] = nb->bodies->data[b]->v;
+  }
+  silo_file_write_scalar_point_field(silo, "masses", "bodies", 
+                                     masses, NULL); 
+  const char* v_comps[] = {"vx", "vy", "vz"};
+  silo_file_write_point_field(silo, v_comps, "bodies", 
+                              (real_t*)velocities, 3, NULL); 
+  silo_file_write_vector_expression(silo, "velocities", "<vx, vy, vz>");
+
+  // Write the file.
+  silo_file_close(silo);
+
+  // Clean up.
+  polymec_free(velocities);
+  polymec_free(masses);
+  point_cloud_free(cloud);
+
+  STOP_FUNCTION_TIMER();
+}
+
+static void nbody_save(void* context, 
+                       const char* file_prefix, 
+                       const char* directory, 
+                       real_t time, 
+                       int step)
+{
+  START_FUNCTION_TIMER();
+  nbody_t* nb = context;
+
+  // Open a SILO save file.
+  silo_file_t* silo = silo_file_new(nb->comm, file_prefix, directory, 
+                                    1, 0, step, time);
+
+  // Write the solution vector directly to the file.
+  silo_file_write_real_array(silo, "U", nb->U, 6*nb->bodies->size);
+
+  // Write the masses and body names.
+  int N = (int)(nb->bodies->size);
+  real_t* masses = polymec_malloc(sizeof(real_t) * N);
+  char_array_t* all_names = char_array_new();
+  for (int b = 0; b < N; ++b)
+  {
+    masses[b] = nb->bodies->data[b]->m;
+    size_t name_len = strlen(nb->bodies->data[b]->name);
+    for (size_t c = 0; c < name_len; ++c)
+      char_array_append(all_names, nb->bodies->data[b]->name[c]);
+    char_array_append(all_names, ';');
+  }
+  char_array_append(all_names, '\0');
+  silo_file_write_real_array(silo, "m", masses, 6*nb->bodies->size);
+  silo_file_write_string(silo, "names", all_names->data);
+
+  // Write the file.
+  silo_file_close(silo);
+
+  // Clean up.
+  polymec_free(masses);
+  char_array_free(all_names);
+
+  STOP_FUNCTION_TIMER();
+}
+
+static void nbody_load(void* context, 
+                       const char* file_prefix, 
+                       const char* directory, 
+                       real_t* time, 
+                       int step)
+{
+  START_FUNCTION_TIMER();
+  nbody_t* nb = context;
+
+  if (nb->bodies != NULL)
+    body_array_free(nb->bodies);
+  nb->bodies = body_array_new();
+
+  // Open a SILO save file.
+  silo_file_t* silo = silo_file_open(nb->comm, file_prefix, directory, 
+                                     0, step, time);
+
+  // Read the solution vector directly from the file.
+  if (nb->U != NULL)
+    polymec_free(nb->U);
+  size_t six_N;
+  nb->U = silo_file_read_real_array(silo, "U", &six_N);
+  int N = (int)(six_N / 6);
+
+  // Read the masses and body names.
+  real_t* masses = silo_file_read_real_array(silo, "m", &six_N);
+  ASSERT(six_N == (size_t)(6*N));
+  char* all_names = silo_file_read_string(silo, "names");
+  char* name_ptr = all_names;
+  for (int b = 0; b < N; ++b)
+  {
+    // Retrieve the body's name.
+    char* semicolon = strstr(name_ptr, ";");
+    size_t name_len = semicolon - name_ptr;
+    char name[name_len+1];
+    memcpy(name, name_ptr, sizeof(char) * name_len);
+    name[name_len] = '\0';
+    name_ptr = semicolon + 1;
+
+    // Get the other parameters.
+    real_t m = masses[b];
+    point_t x = {.x = nb->U[6*b], .y = nb->U[6*b+1], .z = nb->U[6*b+2]};
+    vector_t v = {.x = nb->U[6*b+3], .y = nb->U[6*b+4], .z = nb->U[6*b+5]};
+    body_array_append(nb->bodies, body_new(name, m, &x, &v));
+  }
+
+  // Close the file and clean up.
+  silo_file_close(silo);
+
+  // Clean up.
+  polymec_free(masses);
+  string_free(all_names);
+
+  STOP_FUNCTION_TIMER();
+}
+
 static void nbody_dtor(void* context)
 {
   nbody_t* nb = context;
@@ -314,6 +459,9 @@ model_t* barnes_hut_nbody_new(real_t G,
                          .max_dt = nbody_max_dt,
                          .advance = nbody_advance,
                          .finalize = nbody_finalize,
+                         .plot = nbody_plot,
+                         .save = nbody_save,
+                         .load = nbody_load,
                          .dtor = nbody_dtor};
   return model_new("Barnes-Hut N-body", nb, vtable, MODEL_MPI);
 }
