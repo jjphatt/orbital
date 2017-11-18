@@ -127,24 +127,30 @@ static void nbody_plot(void* context,
   // Write a point cloud to the file.
   int N = (int)(nb->bodies->size);
   point_cloud_t* cloud = point_cloud_new(nb->comm, N);
-  for (int b = 0; b < N; ++b)
-    cloud->points[b] = nb->bodies->data[b]->x;
+  for (int i = 0; i < N; ++i)
+  {
+    cloud->points[i].x = nb->U[6*i];
+    cloud->points[i].y = nb->U[6*i+1];
+    cloud->points[i].z = nb->U[6*i+2];
+  }
   silo_file_write_point_cloud(silo, "bodies", cloud);
 
   // Write the masses and velocities.
   real_t* masses = polymec_malloc(sizeof(real_t) * N);
   vector_t* velocities = polymec_malloc(sizeof(vector_t) * N);
-  for (int b = 0; b < N; ++b)
+  for (int i = 0; i < N; ++i)
   {
-    masses[b] = nb->bodies->data[b]->m;
-    velocities[b] = nb->bodies->data[b]->v;
+    masses[i] = nb->bodies->data[i]->m;
+    velocities[i].x = nb->U[6*i+3];
+    velocities[i].y = nb->U[6*i+4];
+    velocities[i].z = nb->U[6*i+5];
   }
   silo_file_write_scalar_point_field(silo, "masses", "bodies", 
                                      masses, NULL); 
   const char* v_comps[] = {"vx", "vy", "vz"};
   silo_file_write_point_field(silo, v_comps, "bodies", 
                               (real_t*)velocities, 3, NULL); 
-  silo_file_write_vector_expression(silo, "velocities", "<vx, vy, vz>");
+  silo_file_write_vector_expression(silo, "velocities", "{vx, vy, vz}");
 
   // Write the file.
   silo_file_close(silo);
@@ -199,7 +205,7 @@ static void nbody_save(void* context,
   STOP_FUNCTION_TIMER();
 }
 
-static void nbody_load(void* context, 
+static bool nbody_load(void* context, 
                        const char* file_prefix, 
                        const char* directory, 
                        real_t* time, 
@@ -208,13 +214,16 @@ static void nbody_load(void* context,
   START_FUNCTION_TIMER();
   nbody_t* nb = context;
 
-  if (nb->bodies != NULL)
-    body_array_free(nb->bodies);
-  nb->bodies = body_array_new();
-
   // Open a SILO save file.
   silo_file_t* silo = silo_file_open(nb->comm, file_prefix, directory, 
                                      0, step, time);
+  if (silo == NULL)
+    return false;
+
+  // Dispose of the bodies.
+  if (nb->bodies != NULL)
+    body_array_free(nb->bodies);
+  nb->bodies = body_array_new();
 
   // Read the solution vector directly from the file.
   if (nb->U != NULL)
@@ -253,6 +262,7 @@ static void nbody_load(void* context,
   string_free(all_names);
 
   STOP_FUNCTION_TIMER();
+  return true;
 }
 
 static void nbody_dtor(void* context)

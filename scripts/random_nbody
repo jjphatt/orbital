@@ -2,17 +2,20 @@
 -- attracted to one another.
 
 -- Options.
-N = tonumber(options.N) or 10                   -- Number of bodies
-L = tonumber(options.L) or 10                   -- Length on a side of a cubic bounding box
-seed = tonumber(options.seed) or 123456         -- Random number generator seed
-dt = tonumber(options.fixed_dt) or 1e-2         -- Fixed timestep
-G = tonumber(options.G) or constants.G          -- Gravitational constant
-m_min = tonumber(options.m_min) or 1            -- Minimum mass
-m_max = tonumber(options.max_mass) or 100       -- Maximum mass
-v_max = tonumber(options.max_mass) or 100       -- Maximum velocity
-T = tonumber(options.T) or 1                    -- Final time
-max_steps = tonumber(options.max_steps) or 1000 -- Maximum number of steps
-algo = options.algorithm or 'barnes_hut'        -- Algorithm ('barnes_hut' or 'brute_force')
+N = tonumber(options.N) or 10                    -- Number of bodies
+L = tonumber(options.L) or 10                    -- Length on a side of a cubic bounding box
+seed = tonumber(options.seed) or 123456          -- Random number generator seed
+dt = tonumber(options.fixed_dt) or 1e-2          -- Fixed timestep
+G = tonumber(options.G) or constants.G           -- Gravitational constant
+m_min = tonumber(options.m_min) or 1             -- Minimum mass
+m_max = tonumber(options.max_mass) or 100        -- Maximum mass
+v_max = tonumber(options.max_mass) or 100        -- Maximum velocity
+T = tonumber(options.T) or 1                     -- Final time
+max_steps = tonumber(options.max_steps) or 1000  -- Maximum number of steps
+algo = options.algorithm or 'barnes_hut'         -- Algorithm ('barnes_hut' or 'brute_force')
+plot_every = tonumber(options.plot_every) or 0.1 -- Plot interval
+save_every = tonumber(options.save_every)        -- Save interval
+load_step = tonumber(options.load_step)          -- Step to load from
 
 -- First and foremost, we need a random number generator.
 gen = rng.host()
@@ -42,26 +45,33 @@ else
   error(string.format('Invalid algorithm: %s', algo))
 end
 
--- Now wire up some probes and set acquisition times.
-times = {}
-for i = 0,T/20 do
-  times[i+1] = i*T/20
+-- If we're running a smallish simulation (N <= 100), wire up some probes and 
+-- set acquisition times.
+if N < 100 then
+  times = {}
+  for i = 0,T/20 do
+    times[i+1] = i*T/20
+  end
+  for i = 1,N do
+    px = nbody.x_probe(bodies[i].name)
+    nb:add_probe(px, times)
+    pv = nbody.v_probe(bodies[i].name)
+    nb:add_probe(pv, times)
+  end
+  pE = nbody.E_probe()
+  nb:add_probe(pE, times)
 end
-for i = 1,N do
-  px = nbody.x_probe(bodies[i].name)
-  nb:add_probe(px, times)
-  pv = nbody.v_probe(bodies[i].name)
-  nb:add_probe(pv, times)
-end
-pE = nbody.E_probe()
-nb:add_probe(pE, times)
 
 -- Run the thing.
 print('Running...')
 nb:run{t1 = 0, 
        t2 = T,
        max_steps = max_steps,
-       max_dt = dt}
+       max_dt = dt,
+       directory = 'random_nbody',
+       plot_every = plot_every,
+       save_every = save_every,
+       load_step = load_step}
 print('Finished.')
 
 -- Extract data and write to a file.
@@ -93,15 +103,16 @@ function write_vector_arrays(file, name, array)
   file:write(']\n')
 end
 
-data = nb:data()
---print(data)
-f = io.open('random_nbody.py', 'w')
-write_array(f, 't', times)
-for i = 1,N do
-  x_name = string.format('x_body_%d', i)
-  write_vector_arrays(f, x_name, data[x_name].values)
-  v_name = string.format('v_body_%d', i)
-  write_vector_arrays(f, v_name, data[v_name].values)
+if (N <= 100) then
+  data = nb:data()
+  f = io.open('random_nbody.py', 'w')
+  write_array(f, 't', times)
+  for i = 1,N do
+    x_name = string.format('x_body_%d', i)
+    write_vector_arrays(f, x_name, data[x_name].values)
+    v_name = string.format('v_body_%d', i)
+    write_vector_arrays(f, v_name, data[v_name].values)
+  end
+  write_array(f, 'E', data['E'].values)
+  f:close()
 end
-write_array(f, 'E', data['E'].values)
-f:close()
