@@ -204,6 +204,7 @@ static void nbody_save(void* context,
   char_array_append(all_names, '\0');
   silo_file_write_real_array(silo, "m", masses, 6*nb->bodies->size);
   silo_file_write_string(silo, "names", all_names->data);
+  silo_file_write_real_array(silo, "E0", &(nb->E0), 1);
 
   // Write the file.
   silo_file_close(silo);
@@ -264,10 +265,17 @@ static bool nbody_load(void* context,
     body_array_append(nb->bodies, body_new(name, m, &x, &v));
   }
 
+  // Retrieve the initial energy of the system.
+  size_t one;
+  real_t* E0 = silo_file_read_real_array(silo, "E0", &one);
+  ASSERT(one == 1);
+  nb->E0 = *E0;
+
   // Close the file and clean up.
   silo_file_close(silo);
 
   // Clean up.
+  polymec_free(E0);
   polymec_free(masses);
   string_free(all_names);
 

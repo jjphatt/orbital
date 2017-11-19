@@ -71,7 +71,6 @@ nb:run{t1 = t1,
        t2 = t2,
        max_steps = max_steps,
        max_dt = dt,
-       directory = 'random_nbody',
        plot_every = plot_every,
        save_every = save_every,
        load_step = load_step}
