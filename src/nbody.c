@@ -132,7 +132,7 @@ static void nbody_plot(void* context,
 
   // Open a SILO viz file.
   silo_file_t* silo = silo_file_new(nb->comm, file_prefix, directory, 
-                                    1, 0, step, time);
+                                    1, step, time);
 
   // Write a point cloud to the file.
   int N = (int)(nb->bodies->size);
@@ -184,7 +184,7 @@ static void nbody_save(void* context,
 
   // Open a SILO save file.
   silo_file_t* silo = silo_file_new(nb->comm, file_prefix, directory, 
-                                    1, 0, step, time);
+                                    1, step, time);
 
   // Write the solution vector directly to the file.
   silo_file_write_real_array(silo, "U", nb->U, 6*nb->bodies->size);
@@ -227,7 +227,7 @@ static bool nbody_load(void* context,
 
   // Open a SILO save file.
   silo_file_t* silo = silo_file_open(nb->comm, file_prefix, directory, 
-                                     0, step, time);
+                                     step, time);
   if (silo == NULL)
     return false;
 
