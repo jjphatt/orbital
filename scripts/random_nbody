@@ -52,8 +52,8 @@ end
 -- set acquisition times.
 if N < 100 and not load_step then
   times = {}
-  for i = 0,T/20 do
-    times[i+1] = i*T/20
+  for i = 0,t2/20 do
+    times[i+1] = i*t2/20
   end
   for i = 1,N do
     px = nbody.x_probe(bodies[i].name)
