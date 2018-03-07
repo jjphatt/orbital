@@ -3,6 +3,7 @@
 # Options set on command line.
 verbose    = not-set
 polymec    = not-set
+ide        = not-set
 
 # This proxies everything to the builddir cmake.
 
@@ -26,6 +27,31 @@ ifneq ($(polymec), not-set)
   CONFIG_FLAGS += -DPOLYMEC_PREFIX:PATH=$(polymec)
 else
   CONFIG_FLAGS += -DPOLYMEC_PREFIX:PATH=/usr/local
+endif
+
+# Integrated Development Environment (IDE)?
+ifeq ($(ide), codeblocks)
+  CONFIG_FLAGS += -G "CodeBlocks - Unix Makefiles"
+else
+  ifeq ($(ide), xcode)
+    CONFIG_FLAGS += -GXcode
+  else
+    ifeq ($(ide), codelite)
+      CONFIG_FLAGS += -G "CodeLite - Unix Makefiles"
+    else
+      ifeq ($(ide), eclipse)
+        CONFIG_FLAGS += -G "Eclipse CDT4 - Unix Makefiles"
+      else
+        ifeq ($(ide), kate)
+          CONFIG_FLAGS += -GKate 
+        else
+          ifeq ($(ide), sublime)
+            CONFIG_FLAGS += -G "Sublime Text 2 - Unix Makefiles" 
+          endif
+        endif
+      endif
+    endif
+  endif
 endif
 
 define run-config
