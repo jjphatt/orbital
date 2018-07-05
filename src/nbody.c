@@ -319,7 +319,8 @@ static body_array_t* partition_bodies(nbody_t* nb, body_array_t* bodies)
   point_cloud_t* cloud = point_cloud_new(nb->comm, N);
   for (int b = 0; b < N; ++b)
     cloud->points[b] = bodies->data[b]->x;
-  int64_t* P = partition_vector_from_point_cloud(cloud, nb->comm, NULL, 1.05, true);
+  int64_t* P = partition_points(cloud->points, cloud->num_points, 
+                                nb->comm, NULL, 1.05, true);
 
   // Use the partition vector to cull the off-process bodies.
   body_array_t* local_bodies = body_array_new();
