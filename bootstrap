@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+# This script creates a build directory and sticks a config.sh script into it.
+# Then config.sh can be edited and run within the build directory.
+
+# Print usage info.
+if [ "$1" = "" ]; then
+  echo "Usage: bootstrap build_dir"
+  exit 1
+fi
+
+# Create the build directory if it doesn't exist.
+if [ ! -d $1 ]; then
+  mkdir -p $1
+fi 
+
+# Emit a template config script into the build directory.
+echo "SOURCE_DIR=$PWD" > $1/config.sh
+cat <<EOT >> $1/config.sh
+# ^^^ location of Orbital source.
+# config.sh -- A CMake configuration script.
+# Edit this file to change the parameters in your build. Uncomment exactly one 
+# value for each parameter.
+
+#-----------------------------------------------------------------------------
+#                             Installation prefix
+#-----------------------------------------------------------------------------
+PREFIX=\$HOME/opt
+
+#-----------------------------------------------------------------------------
+#                      Location of polymec library install
+#-----------------------------------------------------------------------------
+POLYMEC=\$HOME/opt
+
+#-----------------------------------------------------------------------------
+#                              Build generator
+#-----------------------------------------------------------------------------
+# Choose one of the following.
+
+# Good old-fashioned UNIX makefiles, like God intended.
+GENERATOR="Unix Makefiles"
+
+# Code::Blocks (with UNIX makefiles underneath).
+#GENERATOR="CodeBlocks - Unix Makefiles"
+
+# XCode (shudder).
+#GENERATOR="XCode"
+
+# CodeLite (with UNIX makefiles underneath).
+#GENERATOR="CodeLite - Unix Makefiles"
+
+# Eclipse CDT4 (with UNIX makefiles underneath).
+#GENERATOR="Eclipse CDT4 - Unix Makefiles"
+
+# Kate
+#GENERATOR="Kate"
+
+# Sublime Text 2 (with UNIX makefiles underneath).
+#GENERATOR="Sublime Text 2 - Unix Makefiles"
+
+#-----------------------------------------------------------------------------
+#                   Don't change anything below here.
+#-----------------------------------------------------------------------------
+
+cmake \
+ -DCMAKE_INSTALL_PREFIX:PATH=\$PREFIX \
+ -DPOLYMEC_PREFIX:PATH=\$POLYMEC \
+ -G "\$GENERATOR" \
+ \$SOURCE_DIR
+EOT
+
+# Give instructions.
+echo "Your build directory $1 is ready."
+echo "To configure your build:"
+echo "  1. cd $1"
+echo "  2. Edit config.sh"
+echo "  3. sh config.sh"
+echo "  4. Build using 'make' or your selected IDE."
+
