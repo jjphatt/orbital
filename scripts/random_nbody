@@ -48,9 +48,9 @@ else
   error(string.format('Invalid algorithm: %s', algo))
 end
 
--- If we're running a smallish simulation (N <= 100), wire up some probes and 
+-- If we're running a smallish simulation (N <= 1000), wire up some probes and 
 -- set acquisition times.
-if N < 100 and not load_step then
+if N <= 1000 and not load_step then
   times = {}
   for i = 0,t2/20 do
     times[i+1] = i*t2/20

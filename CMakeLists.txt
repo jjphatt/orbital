@@ -1,8 +1,8 @@
 # Minimum CMake version.
-cmake_minimum_required (VERSION 3.1.0)
+cmake_minimum_required (VERSION 3.10.0)
 
 # Look for the Polymec library.
-set(MIN_POLYMEC_VERSION 2.0.0) # Minimum library version.
+set(MIN_POLYMEC_VERSION 2.3.0) # Minimum library version.
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH};${POLYMEC_PREFIX}/share/polymec)
 include(polymec)
 if (NOT DEFINED POLYMEC_VERSION)

@@ -72,7 +72,7 @@ static int b_v(lua_State* L)
   return 1;
 }
 
-static lua_record_field body_fields[] = {
+static lua_class_field body_fields[] = {
   {"name", b_name, NULL},
   {"mass", b_mass, NULL},
   {"x", b_x, NULL},
@@ -88,9 +88,9 @@ static int body_tostring(lua_State* L)
   return 1;
 }
 
-static lua_record_metamethod body_mm[] = {
-  {"__tostring", body_tostring},
-  {NULL, NULL}
+static lua_class_method body_methods[] = {
+  {"__tostring", body_tostring, NULL},
+  {NULL, NULL, NULL}
 };
 
 static void get_nbody_args(lua_State* L, real_t* G, body_array_t** bodies)
@@ -247,7 +247,7 @@ int lua_register_orbital_modules(lua_State* L)
   lua_register_core_modules(L);
   lua_register_model_modules(L);
 
-  lua_register_record_type(L, "body", "A body in 3D space.", body_functions, body_fields, body_mm, NULL);
+  lua_register_class(L, "body", "A body in 3D space.", body_functions, body_fields, body_methods, NULL);
 
   lua_register_nbody(L);
   lua_register_constants(L);
@@ -256,16 +256,16 @@ int lua_register_orbital_modules(lua_State* L)
 
 void lua_push_body(lua_State* L, body_t* body)
 {
-  lua_push_record(L, "body", body);
+  lua_push_object(L, "body", body);
 }
 
 bool lua_is_body(lua_State* L, int index)
 {
-  return lua_is_record(L, index, "body");
+  return lua_is_object(L, index, "body");
 }
 
 body_t* lua_to_body(lua_State* L, int index)
 {
-  return (body_t*)lua_to_record(L, index, "body");
+  return (body_t*)lua_to_object(L, index, "body");
 }
 
