@@ -54,7 +54,7 @@ n2:run{t1 = 0,
 
 f = io.open('binary1.py', 'w')
 
-x1 = n2:data(px1:data_name())
+x1 = n2:data(px1.data_name)
 f:write('t = [ ')
 for i=1,#x1.times do
   f:write(string.format('%f, ', x1.times[i]))
@@ -73,7 +73,7 @@ for i=1,#x1.values do
 end
 f:write(']\n')
 
-x2 = n2:data(px2:data_name())
+x2 = n2:data(px2.data_name)
 f:write('x2 = [ ')
 for i=1,#x2.values do
   f:write(string.format('%f, ', x2.values[i][1]))
@@ -87,7 +87,7 @@ end
 f:write(']\n')
 
 -- Velocity magnitudes
-v1 = n2:data(pv1:data_name())
+v1 = n2:data(pv1.data_name)
 f:write('v1 = [ ')
 for i=1,#v1.values do
   vx = v1.values[i][1]
@@ -96,7 +96,7 @@ for i=1,#v1.values do
 end
 f:write(']\n')
 
-v2 = n2:data(pv2:data_name())
+v2 = n2:data(pv2.data_name)
 f:write('v2 = [ ')
 for i=1,#v2.values do
   vx = v2.values[i][1]
@@ -106,7 +106,7 @@ end
 f:write(']\n')
 
 -- Energy of the system 
-E = n2:data(pE:data_name())
+E = n2:data(pE.data_name)
 f:write('E = [ ')
 for i=1,#E.values do
   f:write(string.format('%f, ', E.values[i]))
