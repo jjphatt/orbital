@@ -146,28 +146,24 @@ static void nbody_plot(void* context,
   silo_file_write_point_cloud(silo, "bodies", cloud);
 
   // Write the masses and velocities.
-  real_t* masses = polymec_malloc(sizeof(real_t) * N);
-  vector_t* velocities = polymec_malloc(sizeof(vector_t) * N);
+  point_cloud_field_t* field = point_cloud_field_new(cloud, 4);
+  DECLARE_POINT_CLOUD_FIELD_ARRAY(f, field);
   for (int i = 0; i < N; ++i)
   {
-    masses[i] = nb->bodies->data[i]->m;
-    velocities[i].x = nb->U[6*i+3];
-    velocities[i].y = nb->U[6*i+4];
-    velocities[i].z = nb->U[6*i+5];
+    f[i][0] = nb->bodies->data[i]->m;
+    f[i][1] = nb->U[6*i+3];
+    f[i][2] = nb->U[6*i+4];
+    f[i][3] = nb->U[6*i+5];
   }
-  silo_file_write_scalar_point_field(silo, "masses", "bodies", 
-                                     masses, NULL); 
-  const char* v_comps[] = {"vx", "vy", "vz"};
-  silo_file_write_point_field(silo, v_comps, "bodies", 
-                              (real_t*)velocities, 3, NULL); 
+  const char* comp_names[] = {"masses", "vx", "vy", "vz"};
+  silo_file_write_point_field(silo, comp_names, "bodies", field, NULL); 
   silo_file_write_vector_expression(silo, "velocities", "{vx, vy, vz}");
 
   // Write the file.
   silo_file_close(silo);
 
   // Clean up.
-  polymec_free(velocities);
-  polymec_free(masses);
+  point_cloud_field_free(field);
   point_cloud_free(cloud);
 
   STOP_FUNCTION_TIMER();
