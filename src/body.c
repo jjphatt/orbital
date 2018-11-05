@@ -16,7 +16,7 @@ body_t* body_new(const char* name,
 {
   ASSERT(m > 0.0);
 
-  body_t* b = polymec_gc_malloc(sizeof(body_t), body_free);
+  body_t* b = polymec_refcounted_malloc(sizeof(body_t), body_free);
   b->name = string_dup(name);
   b->m = m;
   b->x = *x;
