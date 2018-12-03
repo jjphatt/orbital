@@ -116,6 +116,9 @@ static void get_nbody_args(lua_State* L, real_t* G, body_array_t** bodies)
   }
   lua_pop(L, 1);
 
+  if ((*bodies)->size == 0)
+    luaL_error(L, "bodies must contain at least one body.");
+
   // Are we given a gravitational constant G?
   *G = GRAVITATIONAL_CONSTANT;
   lua_getfield(L, 1, "G");

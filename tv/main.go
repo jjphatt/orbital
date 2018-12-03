@@ -7,6 +7,7 @@ import (
   "bufio"
   "os"
   "github.com/fogleman/gg"
+  "github.com/aarzilli/nucular"
 )
 
 // Here's the struct we unmarshal JSON data to.
@@ -28,8 +29,13 @@ type Canvas struct {
   Name string
   Frame, Index int
   gfx *gg.Context
+  win *nucular.Window
   tMin, tMax, fMin, fMax float64
+  data Datum
 }
+
+// Master window.
+var Win *nuculur.MasterWindow
 
 func NewCanvas(name string, 
                width, height, dataIndex int, 
@@ -48,12 +54,17 @@ func NewCanvas(name string,
   // Clear the graphics context.
   canvas.gfx.SetRGB(0, 0, 0)
   canvas.gfx.Clear()
+
+  // Set up the master window.
+  Win := nucular.NewMasterWindow(0, "orbital.tv", canvas.Draw)
+  Win.Main()
+
   return &canvas
 }
 
-func (canvas *Canvas) Draw(data Datum) {
+func (canvas *Canvas) Draw(win *nucular.Window) {
   // Scale the points.
-  x := data.Time / 
+  x := data.Time /
   f := data.Data[canvas.Index]
 
   // If this is our first frame, Set our initial point.
@@ -64,9 +75,8 @@ func (canvas *Canvas) Draw(data Datum) {
     canvas.gfx.LineTo(x, y)
   }
 
-  // Write to a file.
-  filename := fmt.Sprintf("%s_%d.png", canvas.Name, canvas.Frame)
-  canvas.gfx.SavePNG(filename)
+  win.Image(canvas.gfx.Image())
+
 }
 
 func Receive() {
@@ -84,7 +94,6 @@ func Receive() {
 
   buf := make([]byte, 2000)
   for {
-
     // Read a UDP packet.
     n, _, err := conn.ReadFromUDP(buf)
     if err != nil {
@@ -92,18 +101,17 @@ func Receive() {
       continue
     }
 
-    // Decode the JSON contents.
-    var data Datum;
-    err = json.Unmarshal(buf[:n], &data)
+    // Decode the JSON contents and copy them into place.
+    err = json.Unmarshal(buf[:n], canvas.data)
     if err != nil {
       fmt.Println(err)
       continue
     }
     fmt.Printf("Name: %s\nTime: %g\nData: (%g, %g, %g)\n", 
-               data.Name, data.Time, data.Data[0], data.Data[1], data.Data[2])
+               canvas.data.Name, canvas.data.Time, canvas.data.Data[0], canvas.data.Data[1], canvas.data.Data[2])
 
     // Draw.
-    canvas.Draw(data)
+    Win.Changed()
   }
 }
 

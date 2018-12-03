@@ -17,6 +17,15 @@ plot_every = tonumber(options.plot_every) or 0.1 -- Plot interval
 save_every = tonumber(options.save_every)        -- Save interval
 load_step = tonumber(options.load_step)          -- Step to load from
 
+-- Intercept SIGINT, SIGTERM
+if options.handle_signals == '0' or 
+   options.handle_signals == 'false' or
+   options.handle_signals == 'off' then
+  handle_signals = false
+else
+  handle_signals = true
+end
+
 -- First and foremost, we need a random number generator.
 gen = rng.host()
 gen:set_seed(seed)
@@ -63,6 +72,10 @@ if N <= 1000 and not load_step then
   end
   pE = nbody.E_probe()
   nb:add_probe(pE, times)
+end
+
+if not handle_signals then
+  nb:handle_signals(false)
 end
 
 -- Run the thing.
