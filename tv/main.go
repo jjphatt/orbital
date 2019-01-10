@@ -3,8 +3,8 @@ package main
 import (
   "net"
   "fmt"
+  "image"
   "encoding/json"
-  "bufio"
   "strconv"
   "os"
   "github.com/fogleman/gg"
@@ -58,9 +58,12 @@ func Receive(out chan<- Datum) {
 type Canvas struct {
   Name string
   Frame, Index int
+  w, h int
+  image *image.RGBA
   gfx *gg.Context
   tMin, tMax, fMin, fMax float64
-  x, y int
+  t []float64
+  f []float64
 }
 
 func NewCanvas(name string, 
@@ -71,13 +74,19 @@ func NewCanvas(name string,
     Name: name,
     Frame: 0,
     Index: dataIndex,
-    gfx: gg.NewContext(width, height),
+    image: nil,
+    gfx: nil,
+    w: width,
+    h: height,
     tMin: -timeWindow,
     tMax: 0.0,
     fMin: -0.5 * maxAmplitude/2.0,
     fMax: 0.5 * maxAmplitude,
   }
 
+  // Set up the graphics context
+  canvas.image = image.NewRGBA(image.Rect(0, 0, width, height))
+  canvas.gfx = gg.NewContextForRGBA(canvas.image)
   // Clear the graphics context.
   canvas.gfx.SetRGB(0, 0, 0)
   canvas.gfx.Clear()
@@ -85,19 +94,39 @@ func NewCanvas(name string,
   return &canvas
 }
 
+// Adds data to the given canvas, readjusting limits and discarding data
+// that has fallen outside of the time window.
+func (canvas *Canvas) AddData(data Datum) {
+  // Rejigger the limits.
+  tWin := canvas.tMax - canvas.tMin
+  canvas.tMax = data.Time
+  canvas.tMin = data.Time - tWin
+
+  // Append new point.
+  canvas.t = append(canvas.t, data.Time)
+  canvas.t = append(canvas.f, data.Data[canvas.Index])
+
+  // Remove old data outside of the window.
+  for (canvas.t[0] < canvas.tMin) {
+    canvas.t = canvas.t[1:]
+    canvas.f = canvas.f[1:]
+  }
+}
+
 func (canvas *Canvas) Draw(w *nucular.Window) {
-/*
-  // If this is our first frame, Set our initial point.
-  // Otherwise just connect the new dot.
-  if canvas.Frame == 0 {
-    canvas.gfx.MoveTo(x, y)
-  } else {
+  tWin := canvas.tMax - canvas.tMin
+  fWin := canvas.fMax - canvas.fMin
+  x := ((canvas.t[0] - canvas.tMin) / tWin) * float64(canvas.w)
+  y := ((canvas.f[0] - canvas.fMin) / fWin) * float64(canvas.h)
+  canvas.gfx.MoveTo(x, y)
+
+  for i := 1; i < len(canvas.f); i++ {
+    x = ((canvas.t[i] - canvas.tMin) / tWin) * float64(canvas.w)
+    y = ((canvas.f[i] - canvas.fMin) / fWin) * float64(canvas.h)
     canvas.gfx.LineTo(x, y)
   }
 
-  canvas.win.Image(canvas.gfx.Image())
-  canvas.win.Changed()
-*/
+  w.Image(canvas.image)
 }
 
 var win nucular.MasterWindow
@@ -109,13 +138,10 @@ func Display(canvas *Canvas, in <-chan Datum) {
     // Get the data from the channel.
     data := <-in
 
-    // Update the canvas.
-//    // Scale the points.
-//    x := data.Time /
-//    f := data.Data[canvas.Index]
-
-    fmt.Printf("Name: %s\nTime: %g\nData: (%g, %g, %g)\n", 
-               data.Name, data.Time, data.Data[0], data.Data[1], data.Data[2])
+    // Add the new data to the canvas.
+    canvas.AddData(data)
+//    fmt.Printf("Name: %s\nTime: %g\nData: (%g, %g, %g)\n", 
+//               data.Name, data.Time, data.Data[0], data.Data[1], data.Data[2])
     win.Changed();
   }
 }
@@ -137,19 +163,11 @@ func main() {
 
   // Set up the master window.
   win = nucular.NewMasterWindow(0, "orbital.tv", canvas.Draw)
-  go win.Main()
 
   // Set up a channel and start some goroutines.
   ch := make(chan Datum)
   go Receive(ch)
   go Display(canvas, ch)
 
-  // Break out of the loop when Escape is pressed.
-  reader := bufio.NewReader(os.Stdin)
-  for {
-    char, _, _ := reader.ReadRune()
-    if (char == 27) {
-      break;
-    }
-  }
+  win.Main()
 }
