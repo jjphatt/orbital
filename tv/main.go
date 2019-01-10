@@ -26,6 +26,8 @@ func CheckError(err error) {
   }
 }
 
+// This goroutine receives UDP datagrams with JSON data and send them to the 
+// given channel to be picked up by the Display goroutine.
 func Receive(out chan<- Datum) {
   // Listen on a port.
   addr, err := net.ResolveUDPAddr("udp",":9999")
@@ -58,7 +60,7 @@ type Canvas struct {
   Frame, Index int
   gfx *gg.Context
   tMin, tMax, fMin, fMax float64
-  data Datum
+  x, y int
 }
 
 func NewCanvas(name string, 
@@ -85,10 +87,6 @@ func NewCanvas(name string,
 
 func (canvas *Canvas) Draw(w *nucular.Window) {
 /*
-  // Scale the points.
-  x := data.Time /
-  f := data.Data[canvas.Index]
-
   // If this is our first frame, Set our initial point.
   // Otherwise just connect the new dot.
   if canvas.Frame == 0 {
@@ -104,11 +102,20 @@ func (canvas *Canvas) Draw(w *nucular.Window) {
 
 var win nucular.MasterWindow
 
+// This goroutine pulls data out of the given channel and updates the master
+// window.
 func Display(canvas *Canvas, in <-chan Datum) {
   for {
-    canvas.data = <-in
+    // Get the data from the channel.
+    data := <-in
+
+    // Update the canvas.
+//    // Scale the points.
+//    x := data.Time /
+//    f := data.Data[canvas.Index]
+
     fmt.Printf("Name: %s\nTime: %g\nData: (%g, %g, %g)\n", 
-               canvas.data.Name, canvas.data.Time, canvas.data.Data[0], canvas.data.Data[1], canvas.data.Data[2])
+               data.Name, data.Time, data.Data[0], data.Data[1], data.Data[2])
     win.Changed();
   }
 }
