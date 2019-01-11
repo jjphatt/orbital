@@ -80,7 +80,7 @@ func NewCanvas(name string,
     h: height,
     tMin: -timeWindow,
     tMax: 0.0,
-    fMin: -0.5 * maxAmplitude/2.0,
+    fMin: -0.5 * maxAmplitude,
     fMax: 0.5 * maxAmplitude,
   }
 
@@ -104,7 +104,7 @@ func (canvas *Canvas) AddData(data Datum) {
 
   // Append new point.
   canvas.t = append(canvas.t, data.Time)
-  canvas.t = append(canvas.f, data.Data[canvas.Index])
+  canvas.f = append(canvas.f, data.Data[canvas.Index])
 
   // Remove old data outside of the window.
   for (canvas.t[0] < canvas.tMin) {
@@ -114,19 +114,21 @@ func (canvas *Canvas) AddData(data Datum) {
 }
 
 func (canvas *Canvas) Draw(w *nucular.Window) {
-  tWin := canvas.tMax - canvas.tMin
-  fWin := canvas.fMax - canvas.fMin
-  x := ((canvas.t[0] - canvas.tMin) / tWin) * float64(canvas.w)
-  y := ((canvas.f[0] - canvas.fMin) / fWin) * float64(canvas.h)
-  canvas.gfx.MoveTo(x, y)
+  if len(canvas.t) > 0 {
+    tWin := canvas.tMax - canvas.tMin
+    x := ((canvas.t[0] - canvas.tMin) / tWin) * float64(canvas.w)
+    y := float64(canvas.h)/2 + (canvas.f[0] / canvas.fMax) * float64(canvas.h/2)
+    fmt.Printf("(x, y) = (%g, %g)\n", x, y);
+    canvas.gfx.MoveTo(x, y)
 
-  for i := 1; i < len(canvas.f); i++ {
-    x = ((canvas.t[i] - canvas.tMin) / tWin) * float64(canvas.w)
-    y = ((canvas.f[i] - canvas.fMin) / fWin) * float64(canvas.h)
-    canvas.gfx.LineTo(x, y)
+    for i := 1; i < len(canvas.f); i++ {
+      x = ((canvas.t[i] - canvas.tMin) / tWin) * float64(canvas.w)
+      y = float64(canvas.h)/2 + (canvas.f[i] / canvas.fMax) * float64(canvas.h/2)
+      canvas.gfx.LineTo(x, y)
+    }
+
+    w.Image(canvas.image)
   }
-
-  w.Image(canvas.image)
 }
 
 var win nucular.MasterWindow
@@ -140,8 +142,8 @@ func Display(canvas *Canvas, in <-chan Datum) {
 
     // Add the new data to the canvas.
     canvas.AddData(data)
-//    fmt.Printf("Name: %s\nTime: %g\nData: (%g, %g, %g)\n", 
-//               data.Name, data.Time, data.Data[0], data.Data[1], data.Data[2])
+    fmt.Printf("Name: %s\nTime: %g\nData: (%g, %g, %g)\n", 
+               data.Name, data.Time, data.Data[0], data.Data[1], data.Data[2])
     win.Changed();
   }
 }

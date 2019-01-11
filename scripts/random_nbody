@@ -16,6 +16,7 @@ algo = options.algorithm or 'barnes_hut'         -- Algorithm ('barnes_hut' or '
 plot_every = tonumber(options.plot_every) or 0.1 -- Plot interval
 save_every = tonumber(options.save_every)        -- Save interval
 load_step = tonumber(options.load_step)          -- Step to load from
+stream = options.stream                          -- Stream data to host:port
 
 -- Intercept SIGINT, SIGTERM
 if options.handle_signals == '0' or 
@@ -66,6 +67,9 @@ if N <= 1000 and not load_step then
   end
   for i = 1,N do
     px = nbody.x_probe(bodies[i].name)
+    if i == 1 then
+      px:stream_on_acquire{destination=options.stream}
+    end
     nb:add_probe(px, times)
     pv = nbody.v_probe(bodies[i].name)
     nb:add_probe(pv, times)
