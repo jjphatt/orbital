@@ -1,4 +1,4 @@
--- This generates a random system of bodies that are gravitationally 
+-- This generates a random system of bodies that are gravitationally
 -- attracted to one another.
 
 -- Options.
@@ -19,7 +19,7 @@ load_step = tonumber(options.load_step)          -- Step to load from
 stream = options.stream                          -- Stream data to host:port
 
 -- Intercept SIGINT, SIGTERM
-if options.handle_signals == '0' or 
+if options.handle_signals == '0' or
    options.handle_signals == 'false' or
    options.handle_signals == 'off' then
   handle_signals = false
@@ -32,7 +32,7 @@ gen = rng.host()
 gen:set_seed(seed)
 
 -- Set up a bounding box.
-box = bbox.new{x1 = 0, x2 = L, 
+box = bbox.new{x1 = 0, x2 = L,
                y1 = 0, y2 = L,
                z1 = 0, z2 = L}
 
@@ -58,7 +58,7 @@ else
   error(string.format('Invalid algorithm: %s', algo))
 end
 
--- If we're running a smallish simulation (N <= 1000), wire up some probes and 
+-- If we're running a smallish simulation (N <= 1000), wire up some probes and
 -- set acquisition times.
 if N <= 1000 and not load_step then
   times = {}
@@ -67,7 +67,7 @@ if N <= 1000 and not load_step then
   end
   for i = 1,N do
     px = nbody.x_probe(bodies[i].name)
-    if i == 1 then
+    if i == 1 and options.stream then
       px:stream_on_acquire{destination=options.stream}
     end
     nb:add_probe(px, times)
@@ -84,7 +84,7 @@ end
 
 -- Run the thing.
 print('Running...')
-nb:run{t1 = t1, 
+nb:run{t1 = t1,
        t2 = t2,
        max_steps = max_steps,
        max_dt = dt,

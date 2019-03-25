@@ -37,8 +37,11 @@ POLYMEC=\$HOME/opt
 #-----------------------------------------------------------------------------
 # Choose one of the following.
 
-# Good old-fashioned UNIX makefiles, like God intended.
+# Good old-fashioned UNIX makefiles.
 GENERATOR="Unix Makefiles"
+
+# Ninja build system. Use if available!
+#GENERATOR="Ninja"
 
 # Code::Blocks (with UNIX makefiles underneath).
 #GENERATOR="CodeBlocks - Unix Makefiles"

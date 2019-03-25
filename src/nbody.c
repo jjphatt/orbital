@@ -32,7 +32,7 @@ typedef struct
 
 static real_t nbody_total_energy(nbody_t* nb)
 {
-  // The total energy in the system is the sum of gravitational 
+  // The total energy in the system is the sum of gravitational
   // potentials plus kinetic energies.
   real_t E = 0.0, G = nb->G;
   for (size_t b = 0; b < nb->bodies->size; ++b)
@@ -93,10 +93,9 @@ static real_t nbody_max_dt(void* context, real_t t, char* reason)
 {
 //  nbody_t* nb = context;
 
-  // The timestep is limited by the ratio of the maximum acceleration to 
+  // The timestep is limited by the ratio of the maximum acceleration to
   // the minimum speed.
-  snprintf(reason, POLYMEC_MODEL_MAXDT_REASON_SIZE,
-           "ratio of max acceleration to minimum speed");
+  sprintf(reason, "ratio of max acceleration to minimum speed");
   return REAL_MAX;//0.2 * (nb->a_max / nb->v_min);
 }
 
@@ -120,10 +119,10 @@ static void nbody_finalize(void* context, int step, real_t t)
   log_detail("Fractional energy change: %g", (E - nb->E0) / nb->E0 - 1.0);
 }
 
-static void nbody_plot(void* context, 
-                       const char* file_prefix, 
-                       const char* directory, 
-                       real_t time, 
+static void nbody_plot(void* context,
+                       const char* file_prefix,
+                       const char* directory,
+                       real_t time,
                        int step)
 {
   START_FUNCTION_TIMER();
@@ -131,7 +130,7 @@ static void nbody_plot(void* context,
   nbody_t* nb = context;
 
   // Open a SILO viz file.
-  silo_file_t* silo = silo_file_new(nb->comm, file_prefix, directory, 
+  silo_file_t* silo = silo_file_new(nb->comm, file_prefix, directory,
                                     1, step, time);
 
   // Write a point cloud to the file.
@@ -155,8 +154,13 @@ static void nbody_plot(void* context,
     f[i][2] = nb->U[6*i+4];
     f[i][3] = nb->U[6*i+5];
   }
-  const char* comp_names[] = {"masses", "vx", "vy", "vz"};
-  silo_file_write_point_field(silo, comp_names, "bodies", field, NULL); 
+  field_metadata_t* md = point_cloud_field_metadata(field);
+  field_metadata_set_name(md, 0, "masses");
+  field_metadata_set_name(md, 1, "vx");
+  field_metadata_set_name(md, 2, "vy");
+  field_metadata_set_name(md, 3, "vz");
+  field_metadata_set_vector(md, 1);
+  silo_file_write_point_field(silo, "data", "bodies", field);
   silo_file_write_vector_expression(silo, "velocities", "{vx, vy, vz}");
 
   // Write the file.
@@ -169,17 +173,17 @@ static void nbody_plot(void* context,
   STOP_FUNCTION_TIMER();
 }
 
-static void nbody_save(void* context, 
-                       const char* file_prefix, 
-                       const char* directory, 
-                       real_t time, 
+static void nbody_save(void* context,
+                       const char* file_prefix,
+                       const char* directory,
+                       real_t time,
                        int step)
 {
   START_FUNCTION_TIMER();
   nbody_t* nb = context;
 
   // Open a SILO save file.
-  silo_file_t* silo = silo_file_new(nb->comm, file_prefix, directory, 
+  silo_file_t* silo = silo_file_new(nb->comm, file_prefix, directory,
                                     1, step, time);
 
   // Write the solution vector directly to the file.
@@ -212,17 +216,17 @@ static void nbody_save(void* context,
   STOP_FUNCTION_TIMER();
 }
 
-static bool nbody_load(void* context, 
-                       const char* file_prefix, 
-                       const char* directory, 
-                       real_t* time, 
+static bool nbody_load(void* context,
+                       const char* file_prefix,
+                       const char* directory,
+                       real_t* time,
                        int step)
 {
   START_FUNCTION_TIMER();
   nbody_t* nb = context;
 
   // Open a SILO save file.
-  silo_file_t* silo = silo_file_open(nb->comm, file_prefix, directory, 
+  silo_file_t* silo = silo_file_open(nb->comm, file_prefix, directory,
                                      step, time);
   if (silo == NULL)
     return false;
@@ -310,12 +314,12 @@ static body_array_t* partition_bodies(nbody_t* nb, body_array_t* bodies)
     return body_array_new();
   }
 
-  // Partition the bodies and their data. Since each process has all of the 
+  // Partition the bodies and their data. Since each process has all of the
   // data, we just compute a partition vector.
   point_cloud_t* cloud = point_cloud_new(nb->comm, N);
   for (int b = 0; b < N; ++b)
     cloud->points[b] = bodies->data[b]->x;
-  int64_t* P = partition_points(cloud->points, cloud->num_points, 
+  int64_t* P = partition_points(cloud->points, cloud->num_points,
                                 nb->comm, NULL, 1.05, true);
 
   // Use the partition vector to cull the off-process bodies.
@@ -358,8 +362,8 @@ static int brute_force_accel(void* context, real_t t, real_t* U, real_t* dvdt)
 
   // How many points on other processes?
   int Np[nb->nprocs];
-  MPI_Allgather(&N, 1, MPI_INT, 
-                Np, 1, MPI_INT, 
+  MPI_Allgather(&N, 1, MPI_INT,
+                Np, 1, MPI_INT,
                 nb->comm);
   int Ntot = 0;
   for (int p = 0; p < nb->nprocs; ++p)
@@ -367,11 +371,11 @@ static int brute_force_accel(void* context, real_t t, real_t* U, real_t* dvdt)
 
   // Get point data from other processes.
   point_t* all_points = polymec_malloc(sizeof(point_t) * Ntot);
-  MPI_Allgather(x, 3*N, MPI_REAL_T, 
-                all_points, 3*N, MPI_REAL_T, 
+  MPI_Allgather(x, 3*N, MPI_REAL_T,
+                all_points, 3*N, MPI_REAL_T,
                 nb->comm);
 
-  // Now compute forces on all pairs, with i ranging over the entirety of 
+  // Now compute forces on all pairs, with i ranging over the entirety of
   // the points, and j over just the local ones.
   vector_t* all_accels = polymec_malloc(sizeof(vector_t) * Ntot);
   memset(all_accels, 0, sizeof(vector_t) * Ntot);
@@ -398,7 +402,7 @@ static int brute_force_accel(void* context, real_t t, real_t* U, real_t* dvdt)
   }
 
   // Sum together all accelerations on all points over all processes.
-  MPI_Allreduce(MPI_IN_PLACE, all_accels, 3*Ntot, 
+  MPI_Allreduce(MPI_IN_PLACE, all_accels, 3*Ntot,
                 MPI_REAL_T, MPI_SUM, nb->comm);
 
   // Extract acceleration data for this process.
