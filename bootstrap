@@ -28,9 +28,9 @@ cat <<EOT >> $1/config.sh
 PREFIX=\$HOME/opt
 
 #-----------------------------------------------------------------------------
-#                      Location of polymec library install
+#                      Location of scasm library install
 #-----------------------------------------------------------------------------
-POLYMEC=\$HOME/opt
+SCASM=\$HOME/opt
 
 #-----------------------------------------------------------------------------
 #                              Build generator
@@ -67,7 +67,7 @@ GENERATOR="Unix Makefiles"
 
 cmake \
  -DCMAKE_INSTALL_PREFIX:PATH=\$PREFIX \
- -DPOLYMEC_PREFIX:PATH=\$POLYMEC \
+ -DSCASM_PREFIX:PATH=\$SCASM \
  -G "\$GENERATOR" \
  \$SOURCE_DIR
 EOT

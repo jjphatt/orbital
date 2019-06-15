@@ -72,7 +72,7 @@ static int b_v(lua_State* L)
   return 1;
 }
 
-static lua_class_field body_fields[] = {
+static lua_type_field body_fields[] = {
   {"name", b_name, NULL},
   {"mass", b_mass, NULL},
   {"x", b_x, NULL},
@@ -88,7 +88,7 @@ static int body_tostring(lua_State* L)
   return 1;
 }
 
-static lua_class_method body_methods[] = {
+static lua_type_method body_methods[] = {
   {"__tostring", body_tostring, NULL},
   {NULL, NULL, NULL}
 };
@@ -250,7 +250,7 @@ int lua_register_orbital_modules(lua_State* L)
   lua_register_core_modules(L);
   lua_register_model_modules(L);
 
-  lua_register_class(L, "body", "A body in 3D space.", body_functions, body_fields, body_methods, NULL);
+  lua_register_type(L, "body", "A body in 3D space.", body_functions, body_fields, body_methods, NULL);
 
   lua_register_nbody(L);
   lua_register_constants(L);

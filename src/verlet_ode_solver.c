@@ -35,7 +35,7 @@ static bool verlet_step(void* context, real_t max_dt, real_t* t, real_t* U)
   real_t t_old = *t;
   int status = v->compute_dvdt(v->context, t_old, U, v->a_old);
   if (status != 0)
-    polymec_error("verlet_step: evaluation of acceleration failed at t = %g.\n", t_old);
+    scasm_error("verlet_step: evaluation of acceleration failed at t = %g.\n", t_old);
 
   // Compute x(t + dt) and copy it into U.
   for (int i = 0; i < N; ++i)
@@ -61,7 +61,7 @@ static bool verlet_step(void* context, real_t max_dt, real_t* t, real_t* U)
   real_t t_new = t_old + max_dt;
   status = v->compute_dvdt(v->context, t_new, U, v->a_new);
   if (status != 0)
-    polymec_error("verlet_step: evaluation of acceleration failed at t = %g.\n", t_new);
+    scasm_error("verlet_step: evaluation of acceleration failed at t = %g.\n", t_new);
 
   // Compute v(t + dt) and copy it into U.
   for (int i = 0; i < N; ++i)
@@ -100,11 +100,11 @@ static bool verlet_advance(void* context, real_t t1, real_t t2, real_t* x)
 static void verlet_dtor(void* context)
 {
   verlet_t* v = context;
-  polymec_free(v->a_old);
-  polymec_free(v->a_new);
+  scasm_free(v->a_old);
+  scasm_free(v->a_new);
   if ((v->context != NULL) && (v->dtor != NULL))
     v->dtor(v->context);
-  polymec_free(v);
+  scasm_free(v);
 }
 
 ode_solver_t* verlet_ode_solver_new(MPI_Comm comm,
@@ -116,18 +116,18 @@ ode_solver_t* verlet_ode_solver_new(MPI_Comm comm,
   ASSERT(N > 0);
   ASSERT(compute_dvdt != NULL);
 
-  verlet_t* v = polymec_malloc(sizeof(verlet_t));
+  verlet_t* v = scasm_malloc(sizeof(verlet_t));
   v->comm = comm;
   v->N = N;
   v->context = context;
   v->compute_dvdt = compute_dvdt;
   v->dtor = dtor;
-  v->a_old = polymec_malloc(sizeof(real_t) * 3 * N);
-  v->a_new = polymec_malloc(sizeof(real_t) * 3 * N);
+  v->a_old = scasm_malloc(sizeof(real_t) * 3 * N);
+  v->a_new = scasm_malloc(sizeof(real_t) * 3 * N);
 
-  ode_solver_vtable vtable = {.step = verlet_step, 
-                              .advance = verlet_advance, 
-                              .dtor = verlet_dtor};
+  ode_solver_methods vtable = {.step = verlet_step,
+                               .advance = verlet_advance,
+                               .dtor = verlet_dtor};
 
   int order = 2;
   return ode_solver_new("Verlet ODE solver", v, vtable, order, 6*N);

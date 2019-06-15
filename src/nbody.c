@@ -64,8 +64,8 @@ static void nbody_init(void* context, real_t t)
 
   // Create and populate the solution vector.
   if (nb->U != NULL)
-    polymec_free(nb->U);
-  nb->U = polymec_malloc(sizeof(real_t) * 6 * nb->bodies->size);
+    scasm_free(nb->U);
+  nb->U = scasm_malloc(sizeof(real_t) * 6 * nb->bodies->size);
   nb->v_min = REAL_MAX;
   for (size_t b = 0; b < nb->bodies->size; ++b)
   {
@@ -102,9 +102,9 @@ static real_t nbody_max_dt(void* context, real_t t, char* reason)
 static real_t nbody_advance(void* context, real_t max_dt, real_t t)
 {
   nbody_t* nb = context;
-  polymec_suspend_fpe();
+  scasm_suspend_fpe();
   bool solved = ode_solver_advance(nb->solver, t, t + max_dt, nb->U);
-  polymec_restore_fpe();
+  scasm_restore_fpe();
   if (!solved)
     return 0.0;
   else
@@ -191,7 +191,7 @@ static void nbody_save(void* context,
 
   // Write the masses and body names.
   int N = (int)(nb->bodies->size);
-  real_t* masses = polymec_malloc(sizeof(real_t) * N);
+  real_t* masses = scasm_malloc(sizeof(real_t) * N);
   char_array_t* all_names = char_array_new();
   for (int b = 0; b < N; ++b)
   {
@@ -210,7 +210,7 @@ static void nbody_save(void* context,
   silo_file_close(silo);
 
   // Clean up.
-  polymec_free(masses);
+  scasm_free(masses);
   char_array_free(all_names);
 
   STOP_FUNCTION_TIMER();
@@ -238,7 +238,7 @@ static bool nbody_load(void* context,
 
   // Read the solution vector directly from the file.
   if (nb->U != NULL)
-    polymec_free(nb->U);
+    scasm_free(nb->U);
   size_t six_N;
   nb->U = silo_file_read_real_array(silo, "U", &six_N);
   int N = (int)(six_N / 6);
@@ -246,8 +246,8 @@ static bool nbody_load(void* context,
   // Read the masses and body names.
   real_t* masses = silo_file_read_real_array(silo, "m", &six_N);
   ASSERT(six_N == (size_t)(6*N));
-  char* all_names = silo_file_read_string(silo, "names");
-  char* name_ptr = all_names;
+  const char* all_names = silo_file_read_string(silo, "names");
+  const char* name_ptr = all_names;
   for (int b = 0; b < N; ++b)
   {
     // Retrieve the body's name.
@@ -275,8 +275,8 @@ static bool nbody_load(void* context,
   silo_file_close(silo);
 
   // Clean up.
-  polymec_free(E0);
-  polymec_free(masses);
+  scasm_free(E0);
+  scasm_free(masses);
   string_free(all_names);
 
   // Set up a Verlet solver.
@@ -295,12 +295,12 @@ static void nbody_dtor(void* context)
   if (nb->bodies != NULL)
     body_array_free(nb->bodies);
   if (nb->U != NULL)
-    polymec_free(nb->U);
+    scasm_free(nb->U);
   if (nb->solver != NULL)
     ode_solver_free(nb->solver);
   if (nb->tree != NULL)
     barnes_hut_tree_free(nb->tree);
-  polymec_free(nb);
+  scasm_free(nb);
 }
 
 static body_array_t* partition_bodies(nbody_t* nb, body_array_t* bodies)
@@ -332,7 +332,7 @@ static body_array_t* partition_bodies(nbody_t* nb, body_array_t* bodies)
   nb->bodies = local_bodies;
 
   // Clean up.
-  polymec_free(P);
+  scasm_free(P);
   point_cloud_free(cloud);
 
   STOP_FUNCTION_TIMER();
@@ -370,14 +370,14 @@ static int brute_force_accel(void* context, real_t t, real_t* U, real_t* dvdt)
     Ntot += Np[p];
 
   // Get point data from other processes.
-  point_t* all_points = polymec_malloc(sizeof(point_t) * Ntot);
+  point_t* all_points = scasm_malloc(sizeof(point_t) * Ntot);
   MPI_Allgather(x, 3*N, MPI_REAL_T,
                 all_points, 3*N, MPI_REAL_T,
                 nb->comm);
 
   // Now compute forces on all pairs, with i ranging over the entirety of
   // the points, and j over just the local ones.
-  vector_t* all_accels = polymec_malloc(sizeof(vector_t) * Ntot);
+  vector_t* all_accels = scasm_malloc(sizeof(vector_t) * Ntot);
   memset(all_accels, 0, sizeof(vector_t) * Ntot);
   for (size_t i = 0; i < Ntot; ++i)
   {
@@ -412,8 +412,8 @@ static int brute_force_accel(void* context, real_t t, real_t* U, real_t* dvdt)
   memcpy(dvdt, &(all_accels[start]), sizeof(vector_t) * N);
 
   // Clean up.
-  polymec_free(all_accels);
-  polymec_free(all_points);
+  scasm_free(all_accels);
+  scasm_free(all_points);
 
   return 0;
 }
@@ -449,7 +449,7 @@ model_t* brute_force_nbody_new(real_t G,
 {
   ASSERT(G >= 0.0);
 
-  nbody_t* nb = polymec_malloc(sizeof(nbody_t));
+  nbody_t* nb = scasm_malloc(sizeof(nbody_t));
   nb->comm = MPI_COMM_WORLD;
   MPI_Comm_rank(nb->comm, &(nb->rank));
   MPI_Comm_size(nb->comm, &(nb->nprocs));
@@ -464,7 +464,7 @@ model_t* brute_force_nbody_new(real_t G,
   body_array_free(bodies);
 
   // Now create the model.
-  model_vtable vtable = {.init = nbody_init,
+  model_methods vtable = {.init = nbody_init,
                          .max_dt = nbody_max_dt,
                          .advance = nbody_advance,
                          .finalize = nbody_finalize,
@@ -479,7 +479,7 @@ model_t* barnes_hut_nbody_new(real_t G,
   ASSERT(G >= 0.0);
   ASSERT(theta >= 0.0);
 
-  nbody_t* nb = polymec_malloc(sizeof(nbody_t));
+  nbody_t* nb = scasm_malloc(sizeof(nbody_t));
   nb->comm = MPI_COMM_WORLD;
   MPI_Comm_rank(nb->comm, &(nb->rank));
   MPI_Comm_size(nb->comm, &(nb->nprocs));
@@ -494,7 +494,7 @@ model_t* barnes_hut_nbody_new(real_t G,
   body_array_free(bodies);
 
   // Now create the model.
-  model_vtable vtable = {.init = nbody_init,
+  model_methods vtable = {.init = nbody_init,
                          .max_dt = nbody_max_dt,
                          .advance = nbody_advance,
                          .finalize = nbody_finalize,
@@ -509,7 +509,7 @@ model_t* barnes_hut_nbody_new(real_t G,
 
 typedef struct
 {
-  char* body_name;
+  const char* body_name;
   nbody_t* model;
   int body_index, body_rank;
 } nbody_probe_t;
@@ -572,7 +572,7 @@ static void nbody_probe_dtor(void* context)
   nbody_probe_t* p = context;
   if (p->body_name != NULL)
     string_free(p->body_name);
-  polymec_free(p);
+  scasm_free(p);
 }
 
 probe_t* nbody_x_probe_new(const char* body_name)
@@ -581,10 +581,10 @@ probe_t* nbody_x_probe_new(const char* body_name)
   snprintf(probe_name, 128, "%s position", body_name);
   snprintf(data_name, 128, "x_%s", body_name);
   size_t shape[1] = {3};
-  nbody_probe_t* nbody_p = polymec_malloc(sizeof(nbody_probe_t));
+  nbody_probe_t* nbody_p = scasm_malloc(sizeof(nbody_probe_t));
   nbody_p->body_name = string_dup(body_name);
   nbody_p->body_index = -1;
-  probe_vtable vtable = {.set_model = nbody_probe_set_model,
+  probe_methods vtable = {.set_model = nbody_probe_set_model,
                          .acquire = nbody_probe_acquire_x,
                          .dtor = nbody_probe_dtor};
   return probe_new(probe_name, data_name, 1, shape, nbody_p, vtable);
@@ -596,10 +596,10 @@ probe_t* nbody_v_probe_new(const char* body_name)
   snprintf(probe_name, 128, "%s velocity", body_name);
   snprintf(data_name, 128, "v_%s", body_name);
   size_t shape[1] = {3};
-  nbody_probe_t* nbody_p = polymec_malloc(sizeof(nbody_probe_t));
+  nbody_probe_t* nbody_p = scasm_malloc(sizeof(nbody_probe_t));
   nbody_p->body_name = string_dup(body_name);
   nbody_p->body_index = -1;
-  probe_vtable vtable = {.set_model = nbody_probe_set_model,
+  probe_methods vtable = {.set_model = nbody_probe_set_model,
                          .acquire = nbody_probe_acquire_v,
                          .dtor = nbody_probe_dtor};
   return probe_new(probe_name, data_name, 1, shape, nbody_p, vtable);
@@ -610,12 +610,12 @@ probe_t* nbody_E_probe_new()
   char probe_name[129], data_name[129];
   snprintf(probe_name, 128, "Total energy");
   snprintf(data_name, 128, "E");
-  nbody_probe_t* nbody_p = polymec_malloc(sizeof(nbody_probe_t));
+  nbody_probe_t* nbody_p = scasm_malloc(sizeof(nbody_probe_t));
   nbody_p->body_name = NULL;
   nbody_p->body_index = -1;
-  probe_vtable vtable = {.set_model = nbody_probe_set_model,
-                         .acquire = nbody_probe_acquire_E,
-                         .dtor = nbody_probe_dtor};
+  probe_methods vtable = {.set_model = nbody_probe_set_model,
+                          .acquire = nbody_probe_acquire_E,
+                          .dtor = nbody_probe_dtor};
   return probe_new(probe_name, data_name, 0, NULL, nbody_p, vtable);
 }
 

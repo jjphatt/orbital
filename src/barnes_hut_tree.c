@@ -14,7 +14,7 @@ barnes_hut_tree_t* barnes_hut_tree_new(MPI_Comm comm,
 {
   ASSERT(theta >= 0.0);
 
-  barnes_hut_tree_t* tree = polymec_malloc(sizeof(barnes_hut_tree_t));
+  barnes_hut_tree_t* tree = scasm_malloc(sizeof(barnes_hut_tree_t));
   tree->comm = comm;
   tree->theta = theta;
   return tree;
@@ -22,7 +22,7 @@ barnes_hut_tree_t* barnes_hut_tree_new(MPI_Comm comm,
 
 void barnes_hut_tree_free(barnes_hut_tree_t* tree)
 {
-  polymec_free(tree);
+  scasm_free(tree);
 }
 
 // These structs store metadata for branches and nodes in the Barnes-Hut tree's 
@@ -204,11 +204,11 @@ void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
     Ntot += Np[p];
 
   // Get point and mass data from other processes.
-  point_t* all_points = polymec_malloc(sizeof(point_t) * Ntot);
+  point_t* all_points = scasm_malloc(sizeof(point_t) * Ntot);
   MPI_Allgather(points, 3*N, MPI_REAL_T, 
                 all_points, 3*N, MPI_REAL_T, 
                 tree->comm);
-  real_t* all_masses = polymec_malloc(sizeof(real_t) * Ntot);
+  real_t* all_masses = scasm_malloc(sizeof(real_t) * Ntot);
   MPI_Allgather(masses, N, MPI_REAL_T, 
                 all_masses, N, MPI_REAL_T, 
                 tree->comm);
@@ -216,7 +216,7 @@ void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
   // Now compute forces on all of the points. Note that we use a "post" 
   // traversal for this one, since we need to check whether the branches 
   // are aggregated.
-  vector_t* all_forces = polymec_malloc(sizeof(vector_t) * Ntot);
+  vector_t* all_forces = scasm_malloc(sizeof(vector_t) * Ntot);
   memset(all_forces, 0, sizeof(vector_t) * Ntot);
   for (int i = 0; i < Ntot; ++i)
   {
@@ -240,10 +240,10 @@ void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
   memcpy(forces, &(all_forces[start]), sizeof(vector_t) * N);
 
   // Clean up.
-  polymec_free(all_forces);
-  polymec_free(all_masses);
-  polymec_free(all_points);
-  polymec_free(force_calc.branches);
+  scasm_free(all_forces);
+  scasm_free(all_masses);
+  scasm_free(all_points);
+  scasm_free(force_calc.branches);
   octree_free(octree);
   STOP_FUNCTION_TIMER();
 }

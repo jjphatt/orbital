@@ -4,23 +4,23 @@
 #ifndef ORBITAL_BODY_H
 #define ORBITAL_BODY_H
 
-#include "polymec.h"
+#include "scasm.h"
 
 // A body floats through 3D space under the influence of gravity.
-typedef struct 
+typedef struct
 {
-  char* name;
+  const char* name;
 
   real_t m;   // mass
   point_t x;  // position
   vector_t v; // velocity
 } body_t;
 
-// Creates a new body with a descriptive name, a mass m, a position x, 
+// Creates a new body with a descriptive name, a mass m, a position x,
 // and a velocity v. Objects of this type are garbage collected.
 body_t* body_new(const char* name,
                  real_t m,
-                 point_t* x, 
+                 point_t* x,
                  vector_t* v);
 
 // Creates a deep copy of the body b.
