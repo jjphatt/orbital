@@ -9,17 +9,12 @@
 
 typedef struct
 {
-  // Requested time step.
-  real_t dt;
-
   // Context and v-table.
   void* context;
   void (*compute_dvdt)(void* context, real_t t, nvector_t* u, nvector_t* dvdt);
   void (*dtor)(void* context);
 
   // Bookkeeping.
-  MPI_Comm comm;
-  int N;
   nvector_t *a_old, *a_new;
 } verlet_t;
 
@@ -32,7 +27,7 @@ static bool verlet_step(void* context, real_t max_dt, real_t* t, nvector_t* u)
   real_t t_old = *t;
   v->compute_dvdt(v->context, t_old, u, v->a_old);
 
-  // Compute x(t + dt) and copy it into U.
+  // Compute x(t + dt) and copy it into u.
   size_t N = nvector_local_size(u);
   real_t ui[N], a_old[N/2];
   nvector_get_local_values(u, ui);
@@ -62,7 +57,7 @@ static bool verlet_step(void* context, real_t max_dt, real_t* t, nvector_t* u)
   real_t t_new = t_old + max_dt;
   v->compute_dvdt(v->context, t_new, u, v->a_new);
 
-  // Compute v(t + dt) and copy it into U.
+  // Compute v(t + dt) and copy it into u.
   real_t a_new[N/2];
   nvector_get_local_values(v->a_new, a_new);
   for (int i = 0; i < n; ++i)
