@@ -21,7 +21,7 @@ typedef struct
   barnes_hut_tree_t* tree;
 
   // Time integrator stuff.
-  bool (*accel)(void* context, real_t t, nvector_t* U, nvector_t* dvdt);
+  void (*accel)(void* context, real_t t, nvector_t* U, nvector_t* dvdt);
   ode_solver_t* solver;
 
   // Solution data.
@@ -91,8 +91,7 @@ static void nbody_init(void* context, real_t t)
   // Set up a Verlet solver.
   if (nb->solver != NULL)
     ode_solver_free(nb->solver);
-  nb->solver = verlet_solver_new(nb->comm, (int)nb->bodies->size,
-                                 nb, nb->accel, NULL);
+  nb->solver = verlet_solver_new(nb, nb->u, nb->accel, NULL);
 }
 
 static real_t nbody_max_dt(void* context, real_t t, char* reason)
@@ -309,8 +308,7 @@ static bool nbody_load(void* context, const char* file_prefix,
   // Set up a Verlet solver.
   if (nb->solver != NULL)
     ode_solver_free(nb->solver);
-  nb->solver = verlet_solver_new(nb->comm, (int)nb->bodies->size, nb, nb->accel,
-                                 NULL);
+  nb->solver = verlet_solver_new(nb, nb->u, nb->accel, NULL);
 
   STOP_FUNCTION_TIMER();
   return true;
@@ -367,7 +365,7 @@ static body_array_t* partition_bodies(nbody_t* nb, body_array_t* bodies)
 }
 
 // Solver functions.
-static bool brute_force_accel(void* context, real_t t, nvector_t* u, nvector_t* dvdt)
+static void brute_force_accel(void* context, real_t t, nvector_t* u, nvector_t* dvdt)
 {
   nbody_t* nb = context;
   real_t G = nb->G;
@@ -438,11 +436,9 @@ static bool brute_force_accel(void* context, real_t t, nvector_t* u, nvector_t* 
   // Clean up.
   scasm_free(all_accels);
   scasm_free(all_points);
-
-  return 0;
 }
 
-static bool barnes_hut_accel(void* context, real_t t, nvector_t* u, nvector_t* dvdt)
+static void barnes_hut_accel(void* context, real_t t, nvector_t* u, nvector_t* dvdt)
 {
   nbody_t* nb = context;
   int N = (int)(nb->bodies->size);
@@ -465,8 +461,6 @@ static bool barnes_hut_accel(void* context, real_t t, nvector_t* u, nvector_t* d
     a[3*i+2] /= m[i];
   }
   nvector_set_local_values(dvdt, a);
-
-  return 0;
 }
 
 //------------------------------------------------------------------------

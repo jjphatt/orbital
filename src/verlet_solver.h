@@ -13,15 +13,10 @@
 // This type of ODE solver integrates a Newtonian system
 // using the Velocity Verlet method.
 
-// Creates a Verlet solver that integrates a solution vector representing a
-// set of N points, each defined by a position and a velocity in 3D space.
-// The ith point is defined by
-//   * x, y, and z positions stored in U[6*i], U[6*i+1], U[6*i+2]
-//   * x, y, and z velocity components stored in U[6*i+3], U[6*i+4], U[6*i+5]
-// Below, compute_dvdt computes the 3 components of the acceleration, placing
-// them into dvdt.
-ode_solver_t* verlet_solver_new(MPI_Comm comm, int N, void* context,
-                                bool (*compute_dvdt)(void* context, real_t t,
+// Creates a Verlet solver that integrates a solution vector u = (x, v) by
+// computing accelerations dv/dt.
+ode_solver_t* verlet_solver_new(void* context, nvector_t* u,
+                                void (*compute_dvdt)(void* context, real_t t,
                                                      nvector_t* u, nvector_t* dvdt),
                                 void (*dtor)(void* context));
 

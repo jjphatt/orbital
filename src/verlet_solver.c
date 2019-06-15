@@ -9,17 +9,16 @@
 
 typedef struct
 {
-  MPI_Comm comm;
-
   // Requested time step.
   real_t dt;
 
   // Context and v-table.
   void* context;
-  bool (*compute_dvdt)(void* context, real_t t, nvector_t* u, nvector_t* dvdt);
+  void (*compute_dvdt)(void* context, real_t t, nvector_t* u, nvector_t* dvdt);
   void (*dtor)(void* context);
 
   // Bookkeeping.
+  MPI_Comm comm;
   int N;
   nvector_t *a_old, *a_new;
 } verlet_t;
@@ -31,12 +30,7 @@ static bool verlet_step(void* context, real_t max_dt, real_t* t, nvector_t* u)
 
   // Compute the acceleration at time t.
   real_t t_old = *t;
-  bool status = v->compute_dvdt(v->context, t_old, u, v->a_old);
-  if (!status)
-  {
-    scasm_error("verlet_step: evaluation of acceleration failed at t = %g.\n",
-                t_old);
-  }
+  v->compute_dvdt(v->context, t_old, u, v->a_old);
 
   // Compute x(t + dt) and copy it into U.
   size_t N = nvector_local_size(u);
@@ -66,17 +60,12 @@ static bool verlet_step(void* context, real_t max_dt, real_t* t, nvector_t* u)
 
   // Compute the acceleration at time t + dt.
   real_t t_new = t_old + max_dt;
-  status = v->compute_dvdt(v->context, t_new, u, v->a_new);
-  if (!status)
-  {
-    scasm_error("verlet_step: evaluation of acceleration failed at t = %g.\n",
-                t_new);
-  }
+  v->compute_dvdt(v->context, t_new, u, v->a_new);
 
   // Compute v(t + dt) and copy it into U.
   real_t a_new[N/2];
   nvector_get_local_values(v->a_new, a_new);
-  for (int i = 0; i < N; ++i)
+  for (int i = 0; i < n; ++i)
   {
     real_t vx_old = ui[6*i+3];
     real_t vy_old = ui[6*i+4];
@@ -105,29 +94,33 @@ static bool verlet_step(void* context, real_t max_dt, real_t* t, nvector_t* u)
 static void verlet_dtor(void* context)
 {
   verlet_t* v = context;
-  scasm_free(v->a_old);
-  scasm_free(v->a_new);
+  nvector_free(v->a_old);
+  nvector_free(v->a_new);
   if ((v->context != NULL) && (v->dtor != NULL))
     v->dtor(v->context);
   scasm_free(v);
 }
 
-ode_solver_t* verlet_solver_new(MPI_Comm comm, int N, void* context,
-                                bool (*compute_dvdt)(void* context, real_t t,
+ode_solver_t* verlet_solver_new(void* context, nvector_t* u,
+                                void (*compute_dvdt)(void* context, real_t t,
                                                      nvector_t* u, nvector_t* dvdt),
                                 void (*dtor)(void* context))
 {
-  ASSERT(N > 0);
+  ASSERT(u != NULL);
   ASSERT(compute_dvdt != NULL);
 
   verlet_t* v = scasm_malloc(sizeof(verlet_t));
-  v->comm = comm;
-  v->N = N;
   v->context = context;
   v->compute_dvdt = compute_dvdt;
   v->dtor = dtor;
-  v->a_old = scasm_malloc(sizeof(real_t) * 3 * N);
-  v->a_new = scasm_malloc(sizeof(real_t) * 3 * N);
+
+  // Set up acceleration n-vectors. These are half the size of u, since they
+  // only store accelerations (dv/dt, and not dx/dt).
+  MPI_Comm comm = nvector_comm(u);
+  int local_size = nvector_local_size(u);
+  index_t global_size = nvector_global_size(u);
+  v->a_old = nvector_new(comm, local_size/2, global_size/2);
+  v->a_new = nvector_clone(v->a_old);
 
   ode_solver_methods vtable = {.step = verlet_step, .dtor = verlet_dtor};
   int order = 2;
