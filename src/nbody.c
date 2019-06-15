@@ -2,7 +2,7 @@
 // All rights reserved.
 
 #include "nbody.h"
-#include "verlet_ode_solver.h"
+#include "verlet_solver.h"
 #include "barnes_hut_tree.h"
 
 typedef struct
@@ -21,11 +21,11 @@ typedef struct
   barnes_hut_tree_t* tree;
 
   // Time integrator stuff.
-  int (*accel)(void* context, real_t t, real_t* U, real_t* dvdt);
+  bool (*accel)(void* context, real_t t, nvector_t* U, nvector_t* dvdt);
   ode_solver_t* solver;
 
   // Solution data.
-  real_t* U;
+  nvector_t* u;
   real_t v_min, a_max;
   real_t E0; // initial energy.
 } nbody_t;
@@ -39,17 +39,17 @@ static real_t nbody_total_energy(nbody_t* nb)
   {
     body_t* b1 = nb->bodies->data[b];
     real_t m1 = b1->m;
-    real_t vx = nb->U[6*b+3];
-    real_t vy = nb->U[6*b+4];
-    real_t vz = nb->U[6*b+5];
+    real_t vx = b1->v.x;
+    real_t vy = b1->v.y;
+    real_t vz = b1->v.z;
     E += 0.5 * m1 * (vx*vx + vy*vy + vz*vz);
-    point_t x1 = {.x = nb->U[6*b], .y = nb->U[6*b+1], .z = nb->U[6*b+2]};
+    point_t x1 = b1->x;
     for (size_t bb = 0; bb < nb->bodies->size; ++bb)
     {
       if (b == bb) continue;
       body_t* b2 = nb->bodies->data[bb];
       real_t m2 = b2->m;
-      point_t x2 = {.x = nb->U[6*bb], .y = nb->U[6*bb+1], .z = nb->U[6*bb+2]};
+      point_t x2 = b2->x;
       real_t r2 = point_square_distance(&x1, &x2);
       E += G * m1 * m2 / r2;
     }
@@ -62,22 +62,28 @@ static void nbody_init(void* context, real_t t)
 {
   nbody_t* nb = context;
 
+  // Count up all the bodies.
+  int local_size = (int)(6*nb->bodies->size);
+  index_t global_size = local_size;
+  MPI_Allreduce(MPI_IN_PLACE, &global_size, 1, MPI_INDEX_T, MPI_SUM, nb->comm);
+
   // Create and populate the solution vector.
-  if (nb->U != NULL)
-    scasm_free(nb->U);
-  nb->U = scasm_malloc(sizeof(real_t) * 6 * nb->bodies->size);
+  if (nb->u == NULL)
+    nb->u = nvector_new(nb->comm, local_size, global_size);
+  real_t u[local_size];
   nb->v_min = REAL_MAX;
   for (size_t b = 0; b < nb->bodies->size; ++b)
   {
     body_t* body = nb->bodies->data[b];
-    nb->U[6*b]   = body->x.x;
-    nb->U[6*b+1] = body->x.y;
-    nb->U[6*b+2] = body->x.z;
-    nb->U[6*b+3] = body->v.x;
-    nb->U[6*b+4] = body->v.y;
-    nb->U[6*b+5] = body->v.z;
+    u[6*b]   = body->x.x;
+    u[6*b+1] = body->x.y;
+    u[6*b+2] = body->x.z;
+    u[6*b+3] = body->v.x;
+    u[6*b+4] = body->v.y;
+    u[6*b+5] = body->v.z;
     nb->v_min = MIN(nb->v_min, vector_mag(&body->v));
   }
+  nvector_set_local_values(nb->u, u);
 
   // Compute the initial energy of the system.
   nb->E0 = nbody_total_energy(nb);
@@ -85,8 +91,8 @@ static void nbody_init(void* context, real_t t)
   // Set up a Verlet solver.
   if (nb->solver != NULL)
     ode_solver_free(nb->solver);
-  nb->solver = verlet_ode_solver_new(nb->comm, (int)nb->bodies->size,
-                                     nb, nb->accel, NULL);
+  nb->solver = verlet_solver_new(nb->comm, (int)nb->bodies->size,
+                                 nb, nb->accel, NULL);
 }
 
 static real_t nbody_max_dt(void* context, real_t t, char* reason)
@@ -103,12 +109,28 @@ static real_t nbody_advance(void* context, real_t max_dt, real_t t)
 {
   nbody_t* nb = context;
   scasm_suspend_fpe();
-  bool solved = ode_solver_advance(nb->solver, t, t + max_dt, nb->U);
+  bool solved = ode_solver_advance(nb->solver, t, t + max_dt, nb->u);
   scasm_restore_fpe();
   if (!solved)
     return 0.0;
   else
-    return max_dt;
+  {
+    // Copy the data from the solution vector into the bodies.
+    real_t u[6*nb->bodies->size];
+    nvector_get_local_values(nb->u, u);
+    for (size_t b = 0; b < nb->bodies->size; ++b)
+    {
+      body_t* body = nb->bodies->data[b];
+      body->x.x = u[6*b];
+      body->x.y = u[6*b+1];
+      body->x.z = u[6*b+2];
+      body->v.x = u[6*b+3];
+      body->v.y = u[6*b+4];
+      body->v.z = u[6*b+5];
+      nb->v_min = MIN(nb->v_min, vector_mag(&body->v));
+    }
+  }
+  return max_dt;
 }
 
 static void nbody_finalize(void* context, int step, real_t t)
@@ -137,11 +159,7 @@ static void nbody_plot(void* context,
   int N = (int)(nb->bodies->size);
   point_cloud_t* cloud = point_cloud_new(nb->comm, N);
   for (int i = 0; i < N; ++i)
-  {
-    cloud->points[i].x = nb->U[6*i];
-    cloud->points[i].y = nb->U[6*i+1];
-    cloud->points[i].z = nb->U[6*i+2];
-  }
+    cloud->points[i] = nb->bodies->data[i]->x;
   silo_file_write_point_cloud(silo, "bodies", cloud);
 
   // Write the masses and velocities.
@@ -149,10 +167,11 @@ static void nbody_plot(void* context,
   DECLARE_POINT_CLOUD_FIELD_ARRAY(f, field);
   for (int i = 0; i < N; ++i)
   {
-    f[i][0] = nb->bodies->data[i]->m;
-    f[i][1] = nb->U[6*i+3];
-    f[i][2] = nb->U[6*i+4];
-    f[i][3] = nb->U[6*i+5];
+    body_t* b = nb->bodies->data[i];
+    f[i][0] = b->m;
+    f[i][1] = b->v.x;
+    f[i][2] = b->v.y;
+    f[i][3] = b->v.z;
   }
   field_metadata_t* md = point_cloud_field_metadata(field);
   field_metadata_set_name(md, 0, "masses");
@@ -187,7 +206,9 @@ static void nbody_save(void* context,
                                     1, step, time);
 
   // Write the solution vector directly to the file.
-  silo_file_write_real_array(silo, "U", nb->U, 6*nb->bodies->size);
+  real_t u[6*nb->bodies->size];
+  nvector_get_local_values(nb->u, u);
+  silo_file_write_real_array(silo, "u", u, 6*nb->bodies->size);
 
   // Write the masses and body names.
   int N = (int)(nb->bodies->size);
@@ -216,11 +237,8 @@ static void nbody_save(void* context,
   STOP_FUNCTION_TIMER();
 }
 
-static bool nbody_load(void* context,
-                       const char* file_prefix,
-                       const char* directory,
-                       real_t* time,
-                       int step)
+static bool nbody_load(void* context, const char* file_prefix,
+                       const char* directory, real_t* time, int step)
 {
   START_FUNCTION_TIMER();
   nbody_t* nb = context;
@@ -237,10 +255,8 @@ static bool nbody_load(void* context,
   nb->bodies = body_array_new();
 
   // Read the solution vector directly from the file.
-  if (nb->U != NULL)
-    scasm_free(nb->U);
   size_t six_N;
-  nb->U = silo_file_read_real_array(silo, "U", &six_N);
+  real_t* u = silo_file_read_real_array(silo, "u", &six_N);
   int N = (int)(six_N / 6);
 
   // Read the masses and body names.
@@ -260,8 +276,8 @@ static bool nbody_load(void* context,
 
     // Get the other parameters.
     real_t m = masses[b];
-    point_t x = {.x = nb->U[6*b], .y = nb->U[6*b+1], .z = nb->U[6*b+2]};
-    vector_t v = {.x = nb->U[6*b+3], .y = nb->U[6*b+4], .z = nb->U[6*b+5]};
+    point_t x = {.x = u[6*b], .y = u[6*b+1], .z = u[6*b+2]};
+    vector_t v = {.x = u[6*b+3], .y = u[6*b+4], .z = u[6*b+5]};
     body_array_append(nb->bodies, body_new(name, m, &x, &v));
   }
 
@@ -274,6 +290,17 @@ static bool nbody_load(void* context,
   // Close the file and clean up.
   silo_file_close(silo);
 
+  // Count up all the bodies.
+  int local_size = (int)(6*nb->bodies->size);
+  index_t global_size = local_size;
+  MPI_Allreduce(MPI_IN_PLACE, &global_size, 1, MPI_INDEX_T, MPI_SUM, nb->comm);
+
+  // Create and populate the solution vector.
+  if (nb->u == NULL)
+    nb->u = nvector_new(nb->comm, local_size, global_size);
+  nvector_set_local_values(nb->u, u);
+  scasm_free(u);
+
   // Clean up.
   scasm_free(E0);
   scasm_free(masses);
@@ -282,8 +309,8 @@ static bool nbody_load(void* context,
   // Set up a Verlet solver.
   if (nb->solver != NULL)
     ode_solver_free(nb->solver);
-  nb->solver = verlet_ode_solver_new(nb->comm, (int)nb->bodies->size,
-                                     nb, nb->accel, NULL);
+  nb->solver = verlet_solver_new(nb->comm, (int)nb->bodies->size, nb, nb->accel,
+                                 NULL);
 
   STOP_FUNCTION_TIMER();
   return true;
@@ -294,8 +321,8 @@ static void nbody_dtor(void* context)
   nbody_t* nb = context;
   if (nb->bodies != NULL)
     body_array_free(nb->bodies);
-  if (nb->U != NULL)
-    scasm_free(nb->U);
+  if (nb->u != NULL)
+    nvector_free(nb->u);
   if (nb->solver != NULL)
     ode_solver_free(nb->solver);
   if (nb->tree != NULL)
@@ -340,7 +367,7 @@ static body_array_t* partition_bodies(nbody_t* nb, body_array_t* bodies)
 }
 
 // Solver functions.
-static int brute_force_accel(void* context, real_t t, real_t* U, real_t* dvdt)
+static bool brute_force_accel(void* context, real_t t, nvector_t* u, nvector_t* dvdt)
 {
   nbody_t* nb = context;
   real_t G = nb->G;
@@ -350,30 +377,26 @@ static int brute_force_accel(void* context, real_t t, real_t* U, real_t* dvdt)
   // Extract point coordinates and masses from solution data.
   int N = (int)(nb->bodies->size);
   point_t x[N];
-  real_t m[N];
+  real_t m[N], ui[6*N];
+  nvector_get_local_values(u, ui);
   for (int i = 0; i < N; ++i)
   {
-    x[i].x = U[6*i];
-    x[i].y = U[6*i+1];
-    x[i].z = U[6*i+2];
+    x[i].x = ui[6*i];
+    x[i].y = ui[6*i+1];
+    x[i].z = ui[6*i+2];
     m[i] = nb->bodies->data[i]->m;
   }
 
-
   // How many points on other processes?
   int Np[nb->nprocs];
-  MPI_Allgather(&N, 1, MPI_INT,
-                Np, 1, MPI_INT,
-                nb->comm);
+  MPI_Allgather(&N, 1, MPI_INT, Np, 1, MPI_INT, nb->comm);
   int Ntot = 0;
   for (int p = 0; p < nb->nprocs; ++p)
     Ntot += Np[p];
 
   // Get point data from other processes.
   point_t* all_points = scasm_malloc(sizeof(point_t) * Ntot);
-  MPI_Allgather(x, 3*N, MPI_REAL_T,
-                all_points, 3*N, MPI_REAL_T,
-                nb->comm);
+  MPI_Allgather(x, 3*N, MPI_REAL_T, all_points, 3*N, MPI_REAL_T, nb->comm);
 
   // Now compute forces on all pairs, with i ranging over the entirety of
   // the points, and j over just the local ones.
@@ -402,14 +425,15 @@ static int brute_force_accel(void* context, real_t t, real_t* U, real_t* dvdt)
   }
 
   // Sum together all accelerations on all points over all processes.
-  MPI_Allreduce(MPI_IN_PLACE, all_accels, 3*Ntot,
-                MPI_REAL_T, MPI_SUM, nb->comm);
+  MPI_Allreduce(MPI_IN_PLACE, all_accels, 3*Ntot, MPI_REAL_T, MPI_SUM, nb->comm);
 
   // Extract acceleration data for this process.
   int start = 0;
   for (int p = 0; p < nb->rank; ++p)
     start += Np[p];
-  memcpy(dvdt, &(all_accels[start]), sizeof(vector_t) * N);
+  real_t a[3*N];
+  memcpy(a, &(all_accels[start]), sizeof(vector_t) * N);
+  nvector_set_local_values(dvdt, a);
 
   // Clean up.
   scasm_free(all_accels);
@@ -418,26 +442,29 @@ static int brute_force_accel(void* context, real_t t, real_t* U, real_t* dvdt)
   return 0;
 }
 
-static int barnes_hut_accel(void* context, real_t t, real_t* U, real_t* dvdt)
+static bool barnes_hut_accel(void* context, real_t t, nvector_t* u, nvector_t* dvdt)
 {
   nbody_t* nb = context;
   int N = (int)(nb->bodies->size);
   point_t x[N];
-  real_t m[N];
+  real_t m[N], ui[6*N];
+  nvector_get_local_values(u, ui);
   for (int i = 0; i < N; ++i)
   {
-    x[i].x = U[6*i];
-    x[i].y = U[6*i+1];
-    x[i].z = U[6*i+2];
+    x[i].x = ui[6*i];
+    x[i].y = ui[6*i+1];
+    x[i].z = ui[6*i+2];
     m[i] = nb->bodies->data[i]->m;
   }
-  barnes_hut_tree_compute_forces(nb->tree, nb->G, x, m, N, (vector_t*)dvdt);
+  real_t a[3*N];
+  barnes_hut_tree_compute_forces(nb->tree, nb->G, x, m, N, (vector_t*)a);
   for (int i = 0; i < N; ++i)
   {
-    dvdt[3*i] /= m[i];
-    dvdt[3*i+1] /= m[i];
-    dvdt[3*i+2] /= m[i];
+    a[3*i] /= m[i];
+    a[3*i+1] /= m[i];
+    a[3*i+2] /= m[i];
   }
+  nvector_set_local_values(dvdt, a);
 
   return 0;
 }
@@ -456,7 +483,7 @@ model_t* brute_force_nbody_new(real_t G,
   nb->G = G;
   nb->bodies = partition_bodies(nb, bodies);
   nb->tree = NULL;
-  nb->U = NULL;
+  nb->u = NULL;
   nb->solver = NULL;
   nb->accel = brute_force_accel;
 
@@ -486,7 +513,7 @@ model_t* barnes_hut_nbody_new(real_t G,
   nb->G = G;
   nb->bodies = partition_bodies(nb, bodies);
   nb->tree = barnes_hut_tree_new(nb->comm, theta);
-  nb->U = NULL;
+  nb->u = NULL;
   nb->solver = NULL;
   nb->accel = barnes_hut_accel;
 
@@ -540,9 +567,10 @@ static void nbody_probe_acquire_x(void* context, real_t t, probe_data_t* data)
   nbody_t* m = p->model;
   if (p->body_index != -1)
   {
-    data->data[0] = m->U[6*p->body_index];
-    data->data[1] = m->U[6*p->body_index+1];
-    data->data[2] = m->U[6*p->body_index+2];
+    body_t* b = m->bodies->data[p->body_index];
+    data->data[0] = b->x.x;
+    data->data[1] = b->x.y;
+    data->data[2] = b->x.z;
   }
   MPI_Bcast(data->data, 3, MPI_REAL_T, p->body_rank, m->comm);
 }
@@ -553,9 +581,10 @@ static void nbody_probe_acquire_v(void* context, real_t t, probe_data_t* data)
   nbody_t* m = p->model;
   if (p->body_index != -1)
   {
-    data->data[0] = m->U[6*p->body_index+3];
-    data->data[1] = m->U[6*p->body_index+4];
-    data->data[2] = m->U[6*p->body_index+5];
+    body_t* b = m->bodies->data[p->body_index];
+    data->data[0] = b->v.x;
+    data->data[1] = b->v.y;
+    data->data[2] = b->v.z;
   }
   MPI_Bcast(data->data, 3, MPI_REAL_T, p->body_rank, m->comm);
 }
