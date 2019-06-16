@@ -21,14 +21,66 @@ typedef struct
   barnes_hut_tree_t* tree;
 
   // Time integrator stuff.
-  void (*accel)(void* context, real_t t, nvector_t* U, nvector_t* dvdt);
+  void (*accel)(void* context, real_t t, nvector_t* u, nvector_t* dvdt);
   ode_solver_t* solver;
+  nbody_integ_t integ;
 
   // Solution data.
   nvector_t* u;
+  nvector_t* dvdt; // NULL unless used by RK4.
   real_t v_min, a_max;
   real_t E0; // initial energy.
 } nbody_t;
+
+static void rk4_apply(void* context, real_t t, nvector_t* u, nvector_t* dudt)
+{
+  nbody_t* nb = context;
+  int local_size = nvector_local_size(u);
+  if (nb->dvdt == NULL)
+  {
+    index_t global_size = nvector_global_size(u);
+    nb->dvdt = nvector_new(nb->comm, local_size/2, global_size/2);
+  }
+
+  // Compute accelerations.
+  nb->accel(nb, t, u, nb->dvdt);
+
+  // Compute du/dt.
+  real_t ui[local_size], dvidt[local_size/2], duidt[local_size];
+  nvector_get_local_values(u, ui);
+  nvector_get_local_values(nb->dvdt, dvidt);
+  int N = local_size/6;
+  for (int i = 0; i < N; ++i)
+  {
+    duidt[6*i]   = ui[6*i+3];
+    duidt[6*i+1] = ui[6*i+4];
+    duidt[6*i+2] = ui[6*i+5];
+    duidt[6*i+3] = dvidt[3*i];
+    duidt[6*i+4] = dvidt[3*i+1];
+    duidt[6*i+5] = dvidt[3*i+2];
+  }
+  nvector_set_local_values(dudt, duidt);
+}
+
+static void nbody_set_solver(nbody_t* nb)
+{
+  if (nb->solver != NULL)
+    ode_solver_free(nb->solver);
+  if (nb->integ == NBODY_VERLET)
+  {
+    // Set up a Verlet solver.
+    nb->solver = verlet_solver_new(nb, nb->u, nb->accel, NULL);
+  }
+  else
+  {
+    // Use a Runge-Kutta method.
+    ASSERT(nb->integ == NBODY_RK4);
+    ode_operator_methods methods = {.apply = rk4_apply};
+    nvector_t* proto = nvector_clone(nb->u);
+    ode_operator_t* F = ode_operator_new("N-body RK4", nb, methods, proto, NULL);
+    nb->solver = erk_solver_new(F, 4);
+  }
+}
 
 static real_t nbody_total_energy(nbody_t* nb)
 {
@@ -88,10 +140,7 @@ static void nbody_init(void* context, real_t t)
   // Compute the initial energy of the system.
   nb->E0 = nbody_total_energy(nb);
 
-  // Set up a Verlet solver.
-  if (nb->solver != NULL)
-    ode_solver_free(nb->solver);
-  nb->solver = verlet_solver_new(nb, nb->u, nb->accel, NULL);
+  nbody_set_solver(nb);
 }
 
 static real_t nbody_max_dt(void* context, real_t t, char* reason)
@@ -305,10 +354,7 @@ static bool nbody_load(void* context, const char* file_prefix,
   scasm_free(masses);
   string_free(all_names);
 
-  // Set up a Verlet solver.
-  if (nb->solver != NULL)
-    ode_solver_free(nb->solver);
-  nb->solver = verlet_solver_new(nb, nb->u, nb->accel, NULL);
+  nbody_set_solver(nb);
 
   STOP_FUNCTION_TIMER();
   return true;
@@ -321,6 +367,8 @@ static void nbody_dtor(void* context)
     body_array_free(nb->bodies);
   if (nb->u != NULL)
     nvector_free(nb->u);
+  if (nb->dvdt != NULL)
+    nvector_free(nb->dvdt);
   if (nb->solver != NULL)
     ode_solver_free(nb->solver);
   if (nb->tree != NULL)
@@ -466,7 +514,8 @@ static void barnes_hut_accel(void* context, real_t t, nvector_t* u, nvector_t* d
 //------------------------------------------------------------------------
 
 model_t* brute_force_nbody_new(real_t G,
-                               body_array_t* bodies)
+                               body_array_t* bodies,
+                               nbody_integ_t integ)
 {
   ASSERT(G >= 0.0);
 
@@ -478,8 +527,10 @@ model_t* brute_force_nbody_new(real_t G,
   nb->bodies = partition_bodies(nb, bodies);
   nb->tree = NULL;
   nb->u = NULL;
+  nb->dvdt = NULL;
   nb->solver = NULL;
   nb->accel = brute_force_accel;
+  nb->integ = integ;
 
   // Dispose of the original global list of bodies.
   body_array_free(bodies);
@@ -495,7 +546,8 @@ model_t* brute_force_nbody_new(real_t G,
 
 model_t* barnes_hut_nbody_new(real_t G,
                               real_t theta,
-                              body_array_t* bodies)
+                              body_array_t* bodies,
+                              nbody_integ_t integ)
 {
   ASSERT(G >= 0.0);
   ASSERT(theta >= 0.0);
@@ -508,8 +560,10 @@ model_t* barnes_hut_nbody_new(real_t G,
   nb->bodies = partition_bodies(nb, bodies);
   nb->tree = barnes_hut_tree_new(nb->comm, theta);
   nb->u = NULL;
+  nb->dvdt = NULL;
   nb->solver = NULL;
   nb->accel = barnes_hut_accel;
+  nb->integ = integ;
 
   // Dispose of the original global list of bodies.
   body_array_free(bodies);

@@ -1,23 +1,30 @@
--- This is a simple binary system with two bodies orbiting each other 
+-- This is a simple binary system with two bodies orbiting each other
 -- in a circle.
 
 -- Options
 dt = options.fixed_dt or 1e-2
 max_steps = tonumber(options.max_steps) or 10000
+method = options.method or 'barnes_hut'
+integ = options.integ or 'verlet'
 
-b1 = body.new{name = '1', 
+b1 = body.new{name = '1',
               m = 4,
               x = point.new(-1, 0, 0),
               v = vector.new(0, -1, 0)}
 
-b2 = body.new{name = '2', 
+b2 = body.new{name = '2',
               m = 4,
               x = point.new(1, 0, 0),
               v = vector.new(0, 1, 0)}
 
 -- Create our model.
---n2 = nbody.brute_force{G = 1, bodies = {b1, b2}}
-n2 = nbody.barnes_hut{G = 1, theta = 0.5, bodies = {b1, b2}}
+if method == 'barnes_hut' then
+  nb = nbody.barnes_hut{G = 1, theta = 0.5, bodies = {b1, b2}, integ = integ}
+elseif method == 'n2' then
+  nb = nbody.brute_force{G = 1, bodies = {b1, b2}, integ = integ}
+else
+  error(string.format("Invalid method: %s (must be 'barnes_hut' or 'n2').", method))
+end
 
 -- Figure out how long to run, and set the max number of steps.
 T = 2*math.pi
@@ -36,25 +43,22 @@ pv1 = nbody.v_probe('1')
 px2 = nbody.x_probe('2')
 pv2 = nbody.v_probe('2')
 pE = nbody.E_probe()
-n2:add_probe(px1, times)
-n2:add_probe(pv1, times)
-n2:add_probe(px2, times)
-n2:add_probe(pv2, times)
-n2:add_probe(pE, times)
+nb:add_probe(px1, times)
+nb:add_probe(pv1, times)
+nb:add_probe(px2, times)
+nb:add_probe(pv2, times)
+nb:add_probe(pE, times)
 
 -- Run the thing.
-n2:run{t1 = 0, 
-       t2 = T,
-       max_steps = N_steps,
-       max_dt = dt}
+nb:run{t1 = 0, t2 = T, max_steps = N_steps, max_dt = dt}
 
 -- Extract data and write to a file.
---data = n2:data()
+--data = nb:data()
 --print(data)
 
 f = io.open('binary1.py', 'w')
 
-x1 = n2:data(px1.data_name)
+x1 = nb:data(px1.data_name)
 f:write('t = [ ')
 for i=1,#x1.times do
   f:write(string.format('%f, ', x1.times[i]))
@@ -73,7 +77,7 @@ for i=1,#x1.values do
 end
 f:write(']\n')
 
-x2 = n2:data(px2.data_name)
+x2 = nb:data(px2.data_name)
 f:write('x2 = [ ')
 for i=1,#x2.values do
   f:write(string.format('%f, ', x2.values[i][1]))
@@ -87,7 +91,7 @@ end
 f:write(']\n')
 
 -- Velocity magnitudes
-v1 = n2:data(pv1.data_name)
+v1 = nb:data(pv1.data_name)
 f:write('v1 = [ ')
 for i=1,#v1.values do
   vx = v1.values[i][1]
@@ -96,7 +100,7 @@ for i=1,#v1.values do
 end
 f:write(']\n')
 
-v2 = n2:data(pv2.data_name)
+v2 = nb:data(pv2.data_name)
 f:write('v2 = [ ')
 for i=1,#v2.values do
   vx = v2.values[i][1]
@@ -105,8 +109,8 @@ for i=1,#v2.values do
 end
 f:write(']\n')
 
--- Energy of the system 
-E = n2:data(pE.data_name)
+-- Energy of the system
+E = nb:data(pE.data_name)
 f:write('E = [ ')
 for i=1,#E.values do
   f:write(string.format('%f, ', E.values[i]))

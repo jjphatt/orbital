@@ -83,7 +83,7 @@ static lua_type_field body_fields[] = {
 static int body_tostring(lua_State* L)
 {
   body_t* b = lua_to_body(L, 1);
-  lua_pushfstring(L, "body (name = %s, m = %f, x = (%f, %f, %f), v = (%f, %f, %f))", 
+  lua_pushfstring(L, "body (name = %s, m = %f, x = (%f, %f, %f), v = (%f, %f, %f))",
                   b->name, b->m, b->x.x, b->x.y, b->x.z, b->v.x, b->v.y, b->v.z);
   return 1;
 }
@@ -93,7 +93,8 @@ static lua_type_method body_methods[] = {
   {NULL, NULL, NULL}
 };
 
-static void get_nbody_args(lua_State* L, real_t* G, body_array_t** bodies)
+static void get_nbody_args(lua_State* L, real_t* G, body_array_t** bodies,
+                           nbody_integ_t* integ)
 {
   // Where all our bodies at?
   lua_getfield(L, 1, "bodies");
@@ -128,9 +129,26 @@ static void get_nbody_args(lua_State* L, real_t* G, body_array_t** bodies)
     if (*G <= 0.0)
       luaL_error(L, "G must be positive.");
   }
+
+  // Are we given an integration method?
+  *integ = NBODY_VERLET;
+  lua_getfield(L, 1, "integ");
+  if (lua_isstring(L, -1))
+  {
+    const char* integ_s = lua_tostring(L, -1);
+    if (strcasecmp(integ_s, "verlet") == 0)
+      *integ = NBODY_VERLET;
+    else if (strcasecmp(integ_s, "rk4") == 0)
+      *integ = NBODY_RK4;
+    else
+    {
+      luaL_error(L, "Invalid time integrator: '%s' (must be 'verlet' or 'rk4').",
+                 integ_s);
+    }
+  }
 }
 
-// This function constructs our brute-force n-body model. It takes a table 
+// This function constructs our brute-force n-body model. It takes a table
 // of arguments.
 static int nb_brute_force(lua_State* L)
 {
@@ -140,16 +158,17 @@ static int nb_brute_force(lua_State* L)
   // Fetch our parameters.
   real_t G;
   body_array_t* bodies;
-  get_nbody_args(L, &G, &bodies);
+  nbody_integ_t integ;
+  get_nbody_args(L, &G, &bodies, &integ);
 
   // Create the thingy and push it to the stack.
-  model_t* nb = brute_force_nbody_new(G, bodies);
+  model_t* nb = brute_force_nbody_new(G, bodies, integ);
 
   lua_push_model(L, nb);
   return 1;
 }
 
-// This function constructs our Barnes-Hut hierarchical n-body model. It 
+// This function constructs our Barnes-Hut hierarchical n-body model. It
 // takes a table of arguments.
 static int nb_barnes_hut(lua_State* L)
 {
@@ -159,7 +178,8 @@ static int nb_barnes_hut(lua_State* L)
   // Fetch our parameters.
   real_t G;
   body_array_t* bodies;
-  get_nbody_args(L, &G, &bodies);
+  nbody_integ_t integ;
+  get_nbody_args(L, &G, &bodies, &integ);
 
   // Are we given a far-field parameter theta?
   real_t theta = 0.5;
@@ -172,7 +192,7 @@ static int nb_barnes_hut(lua_State* L)
   }
 
   // Create the thingy and push it to the stack.
-  model_t* nb = barnes_hut_nbody_new(G, theta, bodies);
+  model_t* nb = barnes_hut_nbody_new(G, theta, bodies, integ);
 
   lua_push_model(L, nb);
   return 1;
