@@ -3,14 +3,13 @@
 
 #include "barnes_hut_tree.h"
 
-struct barnes_hut_tree_t 
+struct barnes_hut_tree_t
 {
   MPI_Comm comm;
   real_t theta;
 };
 
-barnes_hut_tree_t* barnes_hut_tree_new(MPI_Comm comm, 
-                                       real_t theta)
+barnes_hut_tree_t* barnes_hut_tree_new(MPI_Comm comm, real_t theta)
 {
   ASSERT(theta >= 0.0);
 
@@ -25,7 +24,7 @@ void barnes_hut_tree_free(barnes_hut_tree_t* tree)
   scasm_free(tree);
 }
 
-// These structs store metadata for branches and nodes in the Barnes-Hut tree's 
+// These structs store metadata for branches and nodes in the Barnes-Hut tree's
 // underlying octree.
 typedef struct
 {
@@ -44,7 +43,7 @@ typedef struct
   // Data for "test mass"
   real_t mi;
   point_t* xi;
-  vector_t* Fi; 
+  vector_t* Fi;
 
   // Performance / diagnostics.
   int num_force_evals;
@@ -111,7 +110,7 @@ static bool sum_branch_force(void* context, int depth, int branch_index, int par
   real_t d = point_distance(xi, xj);
   if ((s/d) < force_calc->theta)
   {
-    // Yup! We compute the force as though this branch and its children are 
+    // Yup! We compute the force as though this branch and its children are
     // one big mass at the center of mass of the branch.
     real_t G = force_calc->G;
     real_t mi = force_calc->mi;
@@ -151,11 +150,8 @@ static void sum_leaf_force(void* context, int j, point_t* xj, int parent_index)
   ++(force_calc->num_force_evals);
 }
 
-void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
-                                    real_t G,
-                                    point_t* points,
-                                    real_t* masses,
-                                    int N,
+void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree, real_t G,
+                                    point_t* points, real_t* masses, int N,
                                     vector_t* forces)
 {
   START_FUNCTION_TIMER();
@@ -163,7 +159,7 @@ void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
 
   // Compute a bounding box that contains all of the local points.
   bbox_t bbox = {.x1 = 0.0, .x2 = 1.0,
-                 .y1 = 0.0, .y2 = 1.0, 
+                 .y1 = 0.0, .y2 = 1.0,
                  .z1 = 0.0, .z2 = 1.0};
   for (int i = 0; i < N; ++i)
     bbox_grow(&bbox, &(points[i]));
@@ -185,36 +181,32 @@ void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
   force_calc.num_force_evals = 0;
 
   // Compute aggregates for points at each branch node of the octree.
-  octree_visit(octree, OCTREE_PRE, &force_calc, 
-               aggregate_branch, aggregate_leaf);
+  octree_visit(octree, OCTREE_PRE, &force_calc, aggregate_branch,
+               aggregate_leaf);
 
-  // We compute forces for all points in our communicator, so let's get 
+  // We compute forces for all points in our communicator, so let's get
   // data from other processes.
   int nprocs, rank;
   MPI_Comm_size(tree->comm, &nprocs);
   MPI_Comm_rank(tree->comm, &rank);
-  
+
   // How many points on other processes?
   int Np[nprocs];
-  MPI_Allgather(&N, 1, MPI_INT, 
-                Np, 1, MPI_INT, 
-                tree->comm);
+  MPI_Allgather(&N, 1, MPI_INT, Np, 1, MPI_INT, tree->comm);
   int Ntot = 0;
   for (int p = 0; p < nprocs; ++p)
     Ntot += Np[p];
 
   // Get point and mass data from other processes.
   point_t* all_points = scasm_malloc(sizeof(point_t) * Ntot);
-  MPI_Allgather(points, 3*N, MPI_REAL_T, 
-                all_points, 3*N, MPI_REAL_T, 
+  MPI_Allgather(points, 3*N, MPI_REAL_T, all_points, 3*N, MPI_REAL_T,
                 tree->comm);
   real_t* all_masses = scasm_malloc(sizeof(real_t) * Ntot);
-  MPI_Allgather(masses, N, MPI_REAL_T, 
-                all_masses, N, MPI_REAL_T, 
+  MPI_Allgather(masses, N, MPI_REAL_T, all_masses, N, MPI_REAL_T,
                 tree->comm);
 
-  // Now compute forces on all of the points. Note that we use a "post" 
-  // traversal for this one, since we need to check whether the branches 
+  // Now compute forces on all of the points. Note that we use a "post"
+  // traversal for this one, since we need to check whether the branches
   // are aggregated.
   vector_t* all_forces = scasm_malloc(sizeof(vector_t) * Ntot);
   memset(all_forces, 0, sizeof(vector_t) * Ntot);
@@ -223,15 +215,15 @@ void barnes_hut_tree_compute_forces(barnes_hut_tree_t* tree,
     force_calc.xi = &(all_points[i]);
     force_calc.mi = all_masses[i];
     force_calc.Fi = &(all_forces[i]);
-    octree_visit(octree, OCTREE_POST, &force_calc, 
-                 sum_branch_force, sum_leaf_force);
+    octree_visit(octree, OCTREE_POST, &force_calc, sum_branch_force,
+                 sum_leaf_force);
   }
-  log_detail("barnes_hut_tree: theta = %g => %d force evaluations.", 
+  log_detail("barnes_hut_tree: theta = %g => %d force evaluations.",
              tree->theta, force_calc.num_force_evals);
 
   // Sum together all forces on all points over all processes.
-  MPI_Allreduce(MPI_IN_PLACE, all_forces, 3*Ntot, 
-                MPI_REAL_T, MPI_SUM, tree->comm);
+  MPI_Allreduce(MPI_IN_PLACE, all_forces, 3*Ntot, MPI_REAL_T, MPI_SUM,
+                tree->comm);
 
   // Extract force data for this process.
   int start = 0;

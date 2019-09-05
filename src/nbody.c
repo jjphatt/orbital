@@ -35,20 +35,32 @@ typedef struct
 static void rk4_apply(void* context, real_t t, nvector_t* u, nvector_t* dudt)
 {
   nbody_t* nb = context;
-  int local_size = nvector_local_size(u);
+#if SCASM_HAVE_MPI
+  int local_size = parallel_real_nvector_local_size(u);
+  real_t* ui = parallel_real_nvector_local_data(u);
+  real_t* duidt = parallel_real_nvector_local_data(dudt);
+  real_t* dvidt = parallel_real_nvector_local_data(nb->dvdt);
   if (nb->dvdt == NULL)
   {
-    index_t global_size = nvector_global_size(u);
-    nb->dvdt = nvector_new(nb->comm, local_size/2, global_size/2);
+    index_t global_size = nvector_dimension(u);
+    nb->dvdt = parallel_real_nvector_new(nb->comm, local_size/2, global_size/2);
   }
+#else
+  int local_size = (int)nvector_dimension(u);
+  real_t* ui = serial_real_nvector_data(u);
+  real_t* duidt = serial_real_nvector_data(dudt);
+  real_t* dvidt = serial_real_nvector_data(nb->dvdt);
+  if (nb->dvdt == NULL)
+  {
+    index_t global_size = nvector_dimension(u);
+    nb->dvdt = serial_real_nvector_new(global_size/2);
+  }
+#endif
 
   // Compute accelerations.
   nb->accel(nb, t, u, nb->dvdt);
 
   // Compute du/dt.
-  real_t ui[local_size], dvidt[local_size/2], duidt[local_size];
-  nvector_get_local_values(u, ui);
-  nvector_get_local_values(nb->dvdt, dvidt);
   int N = local_size/6;
   for (int i = 0; i < N; ++i)
   {
@@ -59,7 +71,6 @@ static void rk4_apply(void* context, real_t t, nvector_t* u, nvector_t* dudt)
     duidt[6*i+4] = dvidt[3*i+1];
     duidt[6*i+5] = dvidt[3*i+2];
   }
-  nvector_set_local_values(dudt, duidt);
 }
 
 static void nbody_set_solver(nbody_t* nb)
@@ -121,8 +132,13 @@ static void nbody_init(void* context, real_t t)
 
   // Create and populate the solution vector.
   if (nb->u == NULL)
-    nb->u = nvector_new(nb->comm, local_size, global_size);
-  real_t u[local_size];
+#if SCASM_HAVE_MPI
+    nb->u = parallel_real_nvector_new(nb->comm, local_size, global_size);
+  real_t* u = parallel_real_nvector_local_data(nb->u);
+#else
+    nb->u = serial_real_nvector_new(global_size);
+  real_t* u = serial_real_nvector_data(nb->u);
+#endif
   nb->v_min = REAL_MAX;
   for (size_t b = 0; b < nb->bodies->size; ++b)
   {
@@ -135,7 +151,6 @@ static void nbody_init(void* context, real_t t)
     u[6*b+5] = body->v.z;
     nb->v_min = MIN(nb->v_min, vector_mag(&body->v));
   }
-  nvector_set_local_values(nb->u, u);
 
   // Compute the initial energy of the system.
   nb->E0 = nbody_total_energy(nb);
@@ -164,8 +179,11 @@ static real_t nbody_advance(void* context, real_t max_dt, real_t t)
   else
   {
     // Copy the data from the solution vector into the bodies.
-    real_t u[6*nb->bodies->size];
-    nvector_get_local_values(nb->u, u);
+#if SCASM_HAVE_MPI
+    real_t* u = parallel_real_nvector_local_data(nb->u);
+#else
+    real_t* u = serial_real_nvector_data(nb->u);
+#endif
     for (size_t b = 0; b < nb->bodies->size; ++b)
     {
       body_t* body = nb->bodies->data[b];
@@ -221,12 +239,12 @@ static void nbody_plot(void* context,
     f[i][2] = b->v.y;
     f[i][3] = b->v.z;
   }
-  field_metadata_t* md = point_cloud_field_metadata(field);
-  field_metadata_set_name(md, 0, "masses");
-  field_metadata_set_name(md, 1, "vx");
-  field_metadata_set_name(md, 2, "vy");
-  field_metadata_set_name(md, 3, "vz");
-  field_metadata_set_vector(md, 1);
+  field_md_t* md = point_cloud_field_md(field);
+  field_md_set_name(md, 0, "masses");
+  field_md_set_name(md, 1, "vx");
+  field_md_set_name(md, 2, "vy");
+  field_md_set_name(md, 3, "vz");
+  field_md_set_vector(md, 1);
   silo_file_write_point_field(silo, "data", "bodies", field);
   silo_file_write_vector_expression(silo, "velocities", "{vx, vy, vz}");
 
@@ -254,8 +272,11 @@ static void nbody_save(void* context,
                                     1, step, time);
 
   // Write the solution vector directly to the file.
-  real_t u[6*nb->bodies->size];
-  nvector_get_local_values(nb->u, u);
+#if SCASM_HAVE_MPI
+  real_t* u = parallel_real_nvector_local_data(nb->u);
+#else
+  real_t* u = serial_real_nvector_data(nb->u);
+#endif
   silo_file_write_real_array(silo, "u", u, 6*nb->bodies->size);
 
   // Write the masses and body names.
@@ -345,8 +366,14 @@ static bool nbody_load(void* context, const char* file_prefix,
 
   // Create and populate the solution vector.
   if (nb->u == NULL)
-    nb->u = nvector_new(nb->comm, local_size, global_size);
-  nvector_set_local_values(nb->u, u);
+#if SCASM_HAVE_MPI
+    nb->u = parallel_real_nvector_new(nb->comm, local_size, global_size);
+  real_t* ui = parallel_real_nvector_local_data(nb->u);
+#else
+    nb->u = serial_real_nvector_new(global_size);
+  real_t* ui = serial_real_nvector_data(nb->u);
+#endif
+  memcpy(ui, u, sizeof(real_t) * local_size);
   scasm_free(u);
 
   // Clean up.
@@ -423,8 +450,12 @@ static void brute_force_accel(void* context, real_t t, nvector_t* u, nvector_t* 
   // Extract point coordinates and masses from solution data.
   int N = (int)(nb->bodies->size);
   point_t x[N];
-  real_t m[N], ui[6*N];
-  nvector_get_local_values(u, ui);
+  real_t m[N];
+#if SCASM_HAVE_MPI
+  real_t* ui = parallel_real_nvector_local_data(nb->u);
+#else
+  real_t* ui = serial_real_nvector_data(nb->u);
+#endif
   for (int i = 0; i < N; ++i)
   {
     x[i].x = ui[6*i];
@@ -477,9 +508,12 @@ static void brute_force_accel(void* context, real_t t, nvector_t* u, nvector_t* 
   int start = 0;
   for (int p = 0; p < nb->rank; ++p)
     start += Np[p];
-  real_t a[3*N];
-  memcpy(a, &(all_accels[start]), sizeof(vector_t) * N);
-  nvector_set_local_values(dvdt, a);
+#if SCASM_HAVE_MPI
+  real_t* ai = parallel_real_nvector_local_data(dvdt);
+#else
+  real_t* ai = serial_real_nvector_data(dvdt);
+#endif
+  memcpy(ai, &(all_accels[start]), sizeof(vector_t) * N);
 
   // Clean up.
   scasm_free(all_accels);
@@ -491,8 +525,14 @@ static void barnes_hut_accel(void* context, real_t t, nvector_t* u, nvector_t* d
   nbody_t* nb = context;
   int N = (int)(nb->bodies->size);
   point_t x[N];
-  real_t m[N], ui[6*N];
-  nvector_get_local_values(u, ui);
+  real_t m[N];
+#if SCASM_HAVE_MPI
+  real_t* ui = parallel_real_nvector_local_data(u);
+  real_t* a = parallel_real_nvector_local_data(dvdt);
+#else
+  real_t* ui = serial_real_nvector_data(u);
+  real_t* a = serial_real_nvector_data(dvdt);
+#endif
   for (int i = 0; i < N; ++i)
   {
     x[i].x = ui[6*i];
@@ -500,7 +540,7 @@ static void barnes_hut_accel(void* context, real_t t, nvector_t* u, nvector_t* d
     x[i].z = ui[6*i+2];
     m[i] = nb->bodies->data[i]->m;
   }
-  real_t a[3*N];
+
   barnes_hut_tree_compute_forces(nb->tree, nb->G, x, m, N, (vector_t*)a);
   for (int i = 0; i < N; ++i)
   {
@@ -508,7 +548,6 @@ static void barnes_hut_accel(void* context, real_t t, nvector_t* u, nvector_t* d
     a[3*i+1] /= m[i];
     a[3*i+2] /= m[i];
   }
-  nvector_set_local_values(dvdt, a);
 }
 
 //------------------------------------------------------------------------
