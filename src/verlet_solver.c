@@ -28,17 +28,10 @@ static bool verlet_step(void* context, real_t max_dt, real_t* t, nvector_t* u)
   v->compute_dvdt(v->context, t_old, u, v->a_old);
 
   // Compute x(t + dt) and copy it into u.
-#if SCASM_HAVE_MPI
   int N = parallel_real_nvector_local_size(u);
   real_t* ui = parallel_real_nvector_local_data(u);
   real_t* a_old = parallel_real_nvector_local_data(v->a_old);
   real_t* a_new = parallel_real_nvector_local_data(v->a_new);
-#else
-  int N = (int)nvector_dimension(u);
-  real_t* ui = serial_real_nvector_data(nb->u);
-  real_t* a_old = serial_real_nvector_data(v->a_old);
-  real_t* a_new = serial_real_nvector_data(v->a_new);
-#endif
   int n = N/6;
   for (int i = 0; i < n; ++i)
   {
@@ -115,13 +108,9 @@ ode_solver_t* verlet_solver_new(void* context, nvector_t* u,
   // Set up acceleration n-vectors. These are half the size of u, since they
   // only store accelerations (dv/dt, and not dx/dt).
   index_t global_size = nvector_dimension(u);
-#if SCASM_HAVE_MPI
   MPI_Comm comm = parallel_real_nvector_comm(u);
   int local_size = parallel_real_nvector_local_size(u);
   v->a_old = parallel_real_nvector_new(comm, local_size/2, global_size/2);
-#else
-  v->a_old = serial_real_nvector_new(global_size/2);
-#endif
   v->a_new = nvector_clone(v->a_old);
 
   ode_solver_methods vtable = {.step = verlet_step, .dtor = verlet_dtor};

@@ -35,7 +35,6 @@ typedef struct
 static void rk4_apply(void* context, real_t t, nvector_t* u, nvector_t* dudt)
 {
   nbody_t* nb = context;
-#if SCASM_HAVE_MPI
   int local_size = parallel_real_nvector_local_size(u);
   real_t* ui = parallel_real_nvector_local_data(u);
   real_t* duidt = parallel_real_nvector_local_data(dudt);
@@ -45,17 +44,6 @@ static void rk4_apply(void* context, real_t t, nvector_t* u, nvector_t* dudt)
     index_t global_size = nvector_dimension(u);
     nb->dvdt = parallel_real_nvector_new(nb->comm, local_size/2, global_size/2);
   }
-#else
-  int local_size = (int)nvector_dimension(u);
-  real_t* ui = serial_real_nvector_data(u);
-  real_t* duidt = serial_real_nvector_data(dudt);
-  real_t* dvidt = serial_real_nvector_data(nb->dvdt);
-  if (nb->dvdt == NULL)
-  {
-    index_t global_size = nvector_dimension(u);
-    nb->dvdt = serial_real_nvector_new(global_size/2);
-  }
-#endif
 
   // Compute accelerations.
   nb->accel(nb, t, u, nb->dvdt);
@@ -132,13 +120,8 @@ static void nbody_init(void* context, real_t t)
 
   // Create and populate the solution vector.
   if (nb->u == NULL)
-#if SCASM_HAVE_MPI
     nb->u = parallel_real_nvector_new(nb->comm, local_size, global_size);
   real_t* u = parallel_real_nvector_local_data(nb->u);
-#else
-    nb->u = serial_real_nvector_new(global_size);
-  real_t* u = serial_real_nvector_data(nb->u);
-#endif
   nb->v_min = REAL_MAX;
   for (size_t b = 0; b < nb->bodies->size; ++b)
   {
@@ -179,11 +162,7 @@ static real_t nbody_advance(void* context, real_t max_dt, real_t t)
   else
   {
     // Copy the data from the solution vector into the bodies.
-#if SCASM_HAVE_MPI
     real_t* u = parallel_real_nvector_local_data(nb->u);
-#else
-    real_t* u = serial_real_nvector_data(nb->u);
-#endif
     for (size_t b = 0; b < nb->bodies->size; ++b)
     {
       body_t* body = nb->bodies->data[b];
@@ -272,11 +251,7 @@ static void nbody_save(void* context,
                                     1, step, time);
 
   // Write the solution vector directly to the file.
-#if SCASM_HAVE_MPI
   real_t* u = parallel_real_nvector_local_data(nb->u);
-#else
-  real_t* u = serial_real_nvector_data(nb->u);
-#endif
   silo_file_write_real_array(silo, "u", u, 6*nb->bodies->size);
 
   // Write the masses and body names.
@@ -366,13 +341,8 @@ static bool nbody_load(void* context, const char* file_prefix,
 
   // Create and populate the solution vector.
   if (nb->u == NULL)
-#if SCASM_HAVE_MPI
     nb->u = parallel_real_nvector_new(nb->comm, local_size, global_size);
   real_t* ui = parallel_real_nvector_local_data(nb->u);
-#else
-    nb->u = serial_real_nvector_new(global_size);
-  real_t* ui = serial_real_nvector_data(nb->u);
-#endif
   memcpy(ui, u, sizeof(real_t) * local_size);
   scasm_free(u);
 
@@ -451,11 +421,7 @@ static void brute_force_accel(void* context, real_t t, nvector_t* u, nvector_t* 
   int N = (int)(nb->bodies->size);
   point_t x[N];
   real_t m[N];
-#if SCASM_HAVE_MPI
   real_t* ui = parallel_real_nvector_local_data(nb->u);
-#else
-  real_t* ui = serial_real_nvector_data(nb->u);
-#endif
   for (int i = 0; i < N; ++i)
   {
     x[i].x = ui[6*i];
@@ -508,11 +474,7 @@ static void brute_force_accel(void* context, real_t t, nvector_t* u, nvector_t* 
   int start = 0;
   for (int p = 0; p < nb->rank; ++p)
     start += Np[p];
-#if SCASM_HAVE_MPI
   real_t* ai = parallel_real_nvector_local_data(dvdt);
-#else
-  real_t* ai = serial_real_nvector_data(dvdt);
-#endif
   memcpy(ai, &(all_accels[start]), sizeof(vector_t) * N);
 
   // Clean up.
@@ -526,13 +488,8 @@ static void barnes_hut_accel(void* context, real_t t, nvector_t* u, nvector_t* d
   int N = (int)(nb->bodies->size);
   point_t x[N];
   real_t m[N];
-#if SCASM_HAVE_MPI
   real_t* ui = parallel_real_nvector_local_data(u);
   real_t* a = parallel_real_nvector_local_data(dvdt);
-#else
-  real_t* ui = serial_real_nvector_data(u);
-  real_t* a = serial_real_nvector_data(dvdt);
-#endif
   for (int i = 0; i < N; ++i)
   {
     x[i].x = ui[6*i];
